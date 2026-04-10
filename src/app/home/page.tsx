@@ -15,6 +15,8 @@ import { VaultCard } from "@/components/vault/VaultCard";
 import { ChainDropdown } from "@/components/vault/ChainDropdown";
 import { SortToggle } from "@/components/vault/SortToggle";
 import { Button } from "@/components/ui/Button";
+import { Card } from "@/components/ui/Card";
+import { Skeleton } from "@/components/ui/Skeleton";
 import { usePreferences } from "@/lib/hooks/usePreferences";
 import { usePositions } from "@/lib/hooks/usePositions";
 import { useVaults } from "@/lib/hooks/useVaults";
@@ -32,7 +34,7 @@ function LiteHome() {
   const { user } = usePrivy();
   const router = useRouter();
   const address = user?.wallet?.address;
-  const { positions, loading, totalBalance, totalEarnings } = usePositions(address);
+  const { positions, loading, error, reload, totalBalance, totalEarnings } = usePositions(address);
 
   const hasPositions = positions.length > 0;
 
@@ -54,9 +56,16 @@ function LiteHome() {
       </div>
 
       {loading ? (
-        <div className="flex justify-center items-center py-20">
-          <div className="font-heading text-lg text-sprout-green-dark animate-pulse">Loading…</div>
+        <div className="flex flex-col gap-5 pt-2 px-5">
+          <Skeleton className="h-44 w-full" />
+          <Skeleton className="h-36 w-full" />
+          <Skeleton className="h-12 w-full" />
         </div>
+      ) : error ? (
+        <Card className="mx-5 text-center py-8">
+          <p className="text-sprout-text-secondary mb-3">Couldn&apos;t load your positions</p>
+          <Button variant="secondary" onClick={reload}>Try again</Button>
+        </Card>
       ) : hasPositions ? (
         <div className="flex flex-col gap-5 pt-2">
           <BalanceCard totalBalance={totalBalance} avgApy={avgApy} />
@@ -100,7 +109,7 @@ function ProHome() {
   const [selectedChains, setSelectedChains] = useState<number[]>([]);
   const [sortBy, setSortBy] = useState<SortBy>("tvl");
 
-  const { vaults, loading, error } = useVaults({
+  const { vaults, loading, error, reload } = useVaults({
     chainIds: selectedChains.length > 0 ? selectedChains : undefined,
     sortBy,
   });
@@ -145,15 +154,16 @@ function ProHome() {
 
       {/* Vault list */}
       {loading ? (
-        <div className="flex justify-center items-center py-20">
-          <div className="font-heading text-lg text-sprout-green-dark animate-pulse">
-            Loading opportunities…
-          </div>
+        <div className="flex flex-col gap-3 px-5">
+          <Skeleton className="h-28 w-full" />
+          <Skeleton className="h-28 w-full" />
+          <Skeleton className="h-28 w-full" />
         </div>
       ) : error ? (
-        <div className="mx-5 mt-4 bg-red-50 rounded-2xl p-4 text-sm text-red-600">
-          {error}
-        </div>
+        <Card className="mx-5 text-center py-8">
+          <p className="text-sprout-text-secondary mb-3">Couldn&apos;t load opportunities</p>
+          <Button variant="secondary" onClick={reload}>Try again</Button>
+        </Card>
       ) : vaults.length === 0 ? (
         <div className="mx-5 mt-4 text-center text-sm text-sprout-text-muted py-10">
           No vaults found for selected filters.

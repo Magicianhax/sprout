@@ -7,6 +7,8 @@ import { Header } from "@/components/layout/Header";
 import { BottomNav } from "@/components/layout/BottomNav";
 import { PositionCard } from "@/components/portfolio/PositionCard";
 import { Button } from "@/components/ui/Button";
+import { Card } from "@/components/ui/Card";
+import { Skeleton } from "@/components/ui/Skeleton";
 import { usePreferences } from "@/lib/hooks/usePreferences";
 import { usePositions } from "@/lib/hooks/usePositions";
 import { formatCurrency } from "@/lib/format";
@@ -16,7 +18,7 @@ function PortfolioContent() {
   const { user } = usePrivy();
   const { preferences } = usePreferences();
   const address = user?.wallet?.address;
-  const { positions, loading, totalEarnings } = usePositions(address);
+  const { positions, loading, error, reload, totalEarnings } = usePositions(address);
 
   const isPro = preferences.mode === "pro";
   const hasPositions = positions.length > 0;
@@ -41,11 +43,16 @@ function PortfolioContent() {
       </div>
 
       {loading ? (
-        <div className="flex justify-center items-center py-20">
-          <div className="font-heading text-lg text-sprout-green-dark animate-pulse">
-            Loading…
-          </div>
+        <div className="flex flex-col gap-3 px-5">
+          <Skeleton className="h-28 w-full" />
+          <Skeleton className="h-28 w-full" />
+          <Skeleton className="h-28 w-full" />
         </div>
+      ) : error ? (
+        <Card className="mx-5 text-center py-8">
+          <p className="text-sprout-text-secondary mb-3">Couldn&apos;t load your positions</p>
+          <Button variant="secondary" onClick={reload}>Try again</Button>
+        </Card>
       ) : hasPositions ? (
         <div className="flex flex-col gap-3">
           {positions.map((position) => (
