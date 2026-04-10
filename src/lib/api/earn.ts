@@ -1,0 +1,41 @@
+import { EARN_API_BASE, SUPPORTED_CHAIN_IDS } from "@/lib/constants";
+import type { Vault, VaultsResponse, Chain, Position } from "@/lib/types";
+
+export async function fetchVaults(params?: {
+  chainId?: number;
+  asset?: string;
+  sortBy?: "tvl" | "apy";
+  limit?: number;
+  cursor?: string;
+}): Promise<VaultsResponse> {
+  const searchParams = new URLSearchParams();
+  if (params?.chainId) searchParams.set("chainId", String(params.chainId));
+  if (params?.asset) searchParams.set("asset", params.asset);
+  if (params?.sortBy) searchParams.set("sortBy", params.sortBy);
+  if (params?.limit) searchParams.set("limit", String(params.limit));
+  if (params?.cursor) searchParams.set("cursor", params.cursor);
+  if (!params?.chainId) {
+    SUPPORTED_CHAIN_IDS.forEach((id) => searchParams.append("chainId", String(id)));
+  }
+  const res = await fetch(`${EARN_API_BASE}/v1/earn/vaults?${searchParams}`);
+  if (!res.ok) throw new Error(`Earn API error: ${res.status}`);
+  return res.json();
+}
+
+export async function fetchChains(): Promise<Chain[]> {
+  const res = await fetch(`${EARN_API_BASE}/v1/earn/chains`);
+  if (!res.ok) throw new Error(`Chains API error: ${res.status}`);
+  return res.json();
+}
+
+export async function fetchProtocols(): Promise<{ name: string; website?: string; description?: string }[]> {
+  const res = await fetch(`${EARN_API_BASE}/v1/earn/protocols`);
+  if (!res.ok) throw new Error(`Protocols API error: ${res.status}`);
+  return res.json();
+}
+
+export async function fetchPositions(address: string): Promise<Position[]> {
+  const res = await fetch(`${EARN_API_BASE}/v1/earn/portfolio/${address}/positions`);
+  if (!res.ok) throw new Error(`Positions API error: ${res.status}`);
+  return res.json();
+}
