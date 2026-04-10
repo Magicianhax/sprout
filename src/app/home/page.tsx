@@ -20,7 +20,7 @@ import { Skeleton } from "@/components/ui/Skeleton";
 import { usePreferences } from "@/lib/hooks/usePreferences";
 import { usePositions } from "@/lib/hooks/usePositions";
 import { useVaults } from "@/lib/hooks/useVaults";
-import { formatCurrency, formatPercent, dailyEarnings } from "@/lib/format";
+import { formatCurrency, dailyEarnings } from "@/lib/format";
 import type { SortBy } from "@/lib/types";
 
 function getGreeting(): string {
@@ -34,16 +34,12 @@ function LiteHome() {
   const { user } = usePrivy();
   const router = useRouter();
   const address = user?.wallet?.address;
-  const { positions, loading, error, reload, totalBalance, totalEarnings } = usePositions(address);
+  const { positions, loading, error, reload, totalBalance } = usePositions(address);
 
   const hasPositions = positions.length > 0;
 
-  // Compute average APY weighted by balance
-  const avgApy =
-    hasPositions
-      ? positions.reduce((sum, p) => sum + p.vault.analytics.apy.total * p.balanceUsd, 0) /
-        (totalBalance || 1)
-      : 0;
+  // APY data is not available from the positions endpoint; show balance only
+  const avgApy = 0;
 
   return (
     <main className="min-h-dvh bg-sprout-gradient pb-28">
@@ -114,12 +110,8 @@ function ProHome() {
     sortBy,
   });
 
-  const avgApy =
-    positions.length > 0
-      ? positions.reduce((sum, p) => sum + p.vault.analytics.apy.total * p.balanceUsd, 0) /
-        (totalBalance || 1)
-      : 0;
-
+  // APY data is not available from the positions endpoint
+  const avgApy = 0;
   const daily = dailyEarnings(totalBalance, avgApy);
 
   return (

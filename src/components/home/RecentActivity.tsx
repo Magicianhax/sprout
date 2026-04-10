@@ -3,7 +3,7 @@ import type { Position } from "@/lib/types";
 
 interface ActivityItem {
   id: string;
-  type: "deposit" | "earning";
+  type: "deposit";
   label: string;
   sublabel: string;
   amount: number;
@@ -14,28 +14,18 @@ function buildActivityItems(positions: Position[]): ActivityItem[] {
   const items: ActivityItem[] = [];
 
   for (const position of positions) {
-    const tokenSymbol = position.vault.underlyingTokens[0]?.symbol ?? "Token";
-    const vaultName = position.vault.name;
+    const tokenSymbol = position.asset.symbol;
+    const protocolName = position.protocolName;
+    const balanceUsd = parseFloat(position.balanceUsd || "0");
 
-    if (position.balanceUsd > 0) {
+    if (balanceUsd > 0) {
       items.push({
-        id: `deposit-${position.vault.address}`,
+        id: `deposit-${position.chainId}-${position.asset.address}`,
         type: "deposit",
         label: `Started earning on ${tokenSymbol}`,
-        sublabel: vaultName,
-        amount: position.balanceUsd,
-        amountLabel: formatCurrency(position.balanceUsd),
-      });
-    }
-
-    if (position.earningsUsd > 0) {
-      items.push({
-        id: `earning-${position.vault.address}`,
-        type: "earning",
-        label: `Earned on ${tokenSymbol}`,
-        sublabel: "Yield collected",
-        amount: position.earningsUsd,
-        amountLabel: `+${formatCurrency(position.earningsUsd)}`,
+        sublabel: protocolName,
+        amount: balanceUsd,
+        amountLabel: formatCurrency(balanceUsd),
       });
     }
   }
@@ -62,11 +52,8 @@ export function RecentActivity({ positions }: RecentActivityProps) {
             className="flex items-center gap-3 bg-white rounded-2xl px-4 py-3 shadow-subtle"
           >
             {/* Icon */}
-            <div
-              className={`w-9 h-9 rounded-xl flex items-center justify-center text-lg shrink-0
-                ${item.type === "deposit" ? "bg-sprout-green-light" : "bg-sprout-amber-warm"}`}
-            >
-              {item.type === "deposit" ? "🌱" : "✨"}
+            <div className="w-9 h-9 rounded-xl flex items-center justify-center text-lg shrink-0 bg-sprout-green-light">
+              🌱
             </div>
 
             {/* Labels */}
@@ -78,10 +65,7 @@ export function RecentActivity({ positions }: RecentActivityProps) {
             </div>
 
             {/* Amount */}
-            <span
-              className={`text-sm font-bold shrink-0
-                ${item.type === "earning" ? "text-sprout-green-dark" : "text-sprout-text-primary"}`}
-            >
+            <span className="text-sm font-bold shrink-0 text-sprout-text-primary">
               {item.amountLabel}
             </span>
           </div>

@@ -162,8 +162,8 @@ function VaultDetailContent({ vault, chainId }: { vault: Vault; chainId: number 
 
   const userPosition = positions.find(
     (p) =>
-      p.vault.address.toLowerCase() === vault.address.toLowerCase() &&
-      p.vault.chainId === vault.chainId
+      p.asset.address.toLowerCase() === (vault.underlyingTokens[0]?.address ?? "").toLowerCase() &&
+      p.chainId === vault.chainId
   );
 
   const hasPosition = Boolean(userPosition);
@@ -286,7 +286,7 @@ function VaultDetailContent({ vault, chainId }: { vault: Vault; chainId: number 
             <div className="flex items-center justify-between">
               <div>
                 <p className="font-heading text-2xl font-800 text-sprout-text-primary">
-                  {formatCurrency(userPosition.balanceUsd)}
+                  {formatCurrency(parseFloat(userPosition.balanceUsd || "0"))}
                 </p>
                 <p className="text-sm text-sprout-text-muted mt-0.5">
                   Current balance
@@ -294,7 +294,7 @@ function VaultDetailContent({ vault, chainId }: { vault: Vault; chainId: number 
               </div>
               <div className="text-right">
                 <Badge color="green" className="text-sm px-3 py-1">
-                  +{formatCurrency(userPosition.earningsUsd)} earned
+                  {userPosition.balanceNative} {userPosition.asset.symbol}
                 </Badge>
               </div>
             </div>
@@ -332,27 +332,20 @@ function VaultDetailContent({ vault, chainId }: { vault: Vault; chainId: number 
         </Card>
 
         {/* About protocol */}
-        {(vault.protocol.description || vault.protocol.website) && (
+        {vault.protocol.url && (
           <Card shadow="subtle">
             <p className="font-heading text-base font-700 text-sprout-text-primary mb-2">
               About {vault.protocol.name}
             </p>
-            {vault.protocol.description && (
-              <p className="text-sm text-sprout-text-secondary leading-relaxed mb-3">
-                {vault.protocol.description}
-              </p>
-            )}
-            {vault.protocol.website && (
-              <a
-                href={vault.protocol.website}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="inline-flex items-center gap-1.5 text-sm font-semibold text-sprout-green-dark hover:underline"
-              >
-                Visit website
-                <ExternalLink className="w-3.5 h-3.5" />
-              </a>
-            )}
+            <a
+              href={vault.protocol.url}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-flex items-center gap-1.5 text-sm font-semibold text-sprout-green-dark hover:underline"
+            >
+              Visit website
+              <ExternalLink className="w-3.5 h-3.5" />
+            </a>
           </Card>
         )}
 

@@ -1,9 +1,8 @@
 "use client";
 
 import { Card } from "@/components/ui/Card";
-import { Badge } from "@/components/ui/Badge";
 import { TokenIcon } from "@/components/ui/TokenIcon";
-import { formatCurrency, formatPercent } from "@/lib/format";
+import { formatCurrency } from "@/lib/format";
 import { CHAIN_NAMES } from "@/lib/constants";
 import type { Position } from "@/lib/types";
 import { useRouter } from "next/navigation";
@@ -15,13 +14,12 @@ interface PositionCardProps {
 
 export function PositionCard({ position, showDetails }: PositionCardProps) {
   const router = useRouter();
-  const { vault, balance, balanceUsd, earningsUsd } = position;
-  const token = vault.underlyingTokens[0];
-  const apy = vault.analytics.apy.total;
-  const chainName = CHAIN_NAMES[vault.chainId] ?? `Chain ${vault.chainId}`;
+  const { asset, protocolName, chainId, balanceUsd, balanceNative } = position;
+  const chainName = CHAIN_NAMES[chainId] ?? `Chain ${chainId}`;
+  const balanceUsdNum = parseFloat(balanceUsd || "0");
 
   const handleClick = showDetails
-    ? () => router.push(`/vault/${vault.address}?chainId=${vault.chainId}`)
+    ? () => router.push(`/vault?chainId=${chainId}`)
     : undefined;
 
   return (
@@ -29,53 +27,39 @@ export function PositionCard({ position, showDetails }: PositionCardProps) {
       <div className="flex items-center gap-3">
         {/* Token icon */}
         <div className="shrink-0">
-          {token ? (
-            <TokenIcon type="token" identifier={token.symbol} size={44} />
-          ) : (
-            <div className="w-11 h-11 rounded-xl bg-sprout-green-light flex items-center justify-center text-sprout-green-dark font-bold text-xs">
-              ?
-            </div>
-          )}
+          <TokenIcon type="token" identifier={asset.symbol} size={44} />
         </div>
 
         {/* Position info */}
         <div className="flex-1 min-w-0">
           <p className="font-semibold text-sprout-text-primary text-[15px] truncate leading-tight">
-            {token?.symbol ?? vault.name}
+            {asset.symbol}
           </p>
           {showDetails && (
             <p className="text-xs text-sprout-text-muted mt-0.5 truncate">
-              {vault.protocol.name} · {chainName}
+              {protocolName} · {chainName}
             </p>
           )}
         </div>
 
-        {/* APY */}
+        {/* Chain badge */}
         <div className="text-right shrink-0">
-          <p className="font-heading text-xl font-800 text-sprout-green-dark">
-            {formatPercent(apy)}
+          <p className="font-heading text-sm font-700 text-sprout-text-secondary">
+            {chainName}
           </p>
-          <p className="text-[11px] text-sprout-text-muted">yearly</p>
+          <p className="text-[11px] text-sprout-text-muted">{protocolName}</p>
         </div>
       </div>
 
-      {/* Balance & Earnings row */}
+      {/* Balance row */}
       <div className="flex items-center justify-between mt-3 pt-3 border-t border-sprout-border">
         <div>
           <p className="text-xs text-sprout-text-muted">Balance</p>
           <p className="font-semibold text-sprout-text-primary text-sm mt-0.5">
-            {formatCurrency(balanceUsd)}
+            {formatCurrency(balanceUsdNum)}
           </p>
-          {token && (
-            <p className="text-[11px] text-sprout-text-muted">
-              {balance.toFixed(4)} {token.symbol}
-            </p>
-          )}
-        </div>
-        <div className="text-right">
-          <p className="text-xs text-sprout-text-muted">Earnings</p>
-          <p className="font-semibold text-sprout-green-dark text-sm mt-0.5">
-            +{formatCurrency(earningsUsd)}
+          <p className="text-[11px] text-sprout-text-muted">
+            {balanceNative} {asset.symbol}
           </p>
         </div>
       </div>

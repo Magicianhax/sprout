@@ -18,7 +18,7 @@ function PortfolioContent() {
   const { user } = usePrivy();
   const { preferences } = usePreferences();
   const address = user?.wallet?.address;
-  const { positions, loading, error, reload, totalEarnings } = usePositions(address);
+  const { positions, loading, error, reload, totalBalance } = usePositions(address);
 
   const isPro = preferences.mode === "pro";
   const hasPositions = positions.length > 0;
@@ -35,9 +35,9 @@ function PortfolioContent() {
         {hasPositions && !loading && (
           <p className="text-sm text-sprout-text-muted mt-1">
             <span className="font-semibold text-sprout-green-dark">
-              {formatCurrency(totalEarnings)}
+              {formatCurrency(totalBalance)}
             </span>{" "}
-            since you started
+            total balance
           </p>
         )}
       </div>
@@ -57,7 +57,7 @@ function PortfolioContent() {
         <div className="flex flex-col gap-3">
           {positions.map((position) => (
             <PositionCard
-              key={`${position.vault.chainId}-${position.vault.address}`}
+              key={`${position.chainId}-${position.asset.address}`}
               position={position}
               showDetails={isPro}
             />
