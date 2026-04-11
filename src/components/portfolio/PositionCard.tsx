@@ -31,9 +31,8 @@ export function PositionCard({ position, showDetails }: PositionCardProps) {
     router.push(`/withdraw?${params.toString()}`);
   }
 
-  const handleClick = showDetails
-    ? () => router.push(`/vault?chainId=${chainId}`)
-    : undefined;
+  // Positions API doesn't return vault address, so no vault detail navigation
+  const handleClick = undefined;
 
   return (
     <Card onClick={handleClick} shadow="subtle" className="mx-5">
