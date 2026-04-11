@@ -70,7 +70,7 @@ function LiteHome() {
           <div className="px-5 flex flex-col gap-3">
             <Button
               className="w-full"
-              onClick={() => router.push("/vault")}
+              onClick={() => router.push("/deposit")}
             >
               Earn More
             </Button>
@@ -86,7 +86,7 @@ function LiteHome() {
         </div>
       ) : (
         <>
-          <EmptyState onStartEarning={() => router.push("/vault")} />
+          <EmptyState onStartEarning={() => router.push("/deposit")} />
           <TrustBadges />
         </>
       )}
