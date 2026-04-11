@@ -10,7 +10,7 @@ export interface TokenBalance {
 
 export function useBalances(address: string | undefined) {
   const [balances, setBalances] = useState<TokenBalance[]>([]);
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState(true);
 
   const load = useCallback(async () => {
     if (!address) return;
