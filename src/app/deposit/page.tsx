@@ -86,12 +86,20 @@ function DepositPageContent() {
         })
         .catch(() => setVault(null));
     } else {
-      // Lite mode: pick highest-TVL vault for the selected token
-      fetchVaults({ asset: tokenSelection.symbol, sortBy: "tvl", limit: 1 })
-        .then((res) => setVault(res.data[0] ?? null))
+      // Lite mode: pick highest-TVL vault for the selected token on the same chain first
+      fetchVaults({ chainId: tokenSelection.chainId, asset: tokenSelection.symbol, sortBy: "tvl", limit: 1 })
+        .then((res) => {
+          if (res.data.length > 0) {
+            setVault(res.data[0]);
+          } else {
+            // No vault on this chain — try any chain
+            return fetchVaults({ asset: tokenSelection.symbol, sortBy: "tvl", limit: 1 })
+              .then((res2) => setVault(res2.data[0] ?? null));
+          }
+        })
         .catch(() => setVault(null));
     }
-  }, [tokenSelection.symbol, urlVault, urlChainId]);
+  }, [tokenSelection.symbol, tokenSelection.chainId, urlVault, urlChainId]);
 
   // When vault resolves, default fromChain to vault's chain if token is available there
   useEffect(() => {
