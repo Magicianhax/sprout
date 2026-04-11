@@ -229,33 +229,33 @@ function DepositPageContent() {
       {isLite ? (
         /* ───── LITE MODE: ultra-simple ───── */
         <>
-          <div className="flex flex-col gap-6 px-5 pb-10 flex-1 items-center justify-center">
+          <div className="flex flex-col gap-8 px-5 pt-10 pb-10 flex-1">
             <div className="text-center">
-              <p className="text-sprout-text-secondary text-sm mb-1">How much do you want to earn on?</p>
-              <p className="text-xs text-sprout-text-muted">
+              <h2 className="font-heading text-lg font-700 text-sprout-text-primary mb-1">
+                How much do you want to earn on?
+              </h2>
+              <p className="text-sm text-sprout-text-muted">
                 {selectedTokenBalance > 0
                   ? `You have ${selectedTokenBalance.toFixed(2)} ${tokenSelection.symbol}`
                   : balancesLoading
                   ? "Checking balance..."
-                  : ""}
+                  : "Enter any amount"}
               </p>
             </div>
 
-            <div className="w-full max-w-[300px]">
-              <AmountInput
-                value={amount}
-                onChange={setAmount}
-                balance={selectedTokenBalance}
-                symbol={tokenSelection.symbol}
-                balanceLoading={balancesLoading}
-              />
-            </div>
+            <AmountInput
+              value={amount}
+              onChange={setAmount}
+              balance={selectedTokenBalance}
+              symbol={tokenSelection.symbol}
+              balanceLoading={balancesLoading}
+            />
 
             {status === "quoting" && validAmount && (
-              <p className="text-xs text-sprout-text-muted animate-pulse">Finding best rate...</p>
+              <p className="text-center text-xs text-sprout-text-muted animate-pulse">Finding best rate...</p>
             )}
             {quoteError && (
-              <p className="text-xs text-red-500">{quoteError}</p>
+              <p className="text-center text-xs text-red-500">{quoteError}</p>
             )}
           </div>
 

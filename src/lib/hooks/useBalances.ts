@@ -1,5 +1,5 @@
 "use client";
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useRef } from "react";
 
 export interface TokenBalance {
   symbol: string;
@@ -11,26 +11,50 @@ export interface TokenBalance {
 export function useBalances(address: string | undefined) {
   const [balances, setBalances] = useState<TokenBalance[]>([]);
   const [loading, setLoading] = useState(true);
-
-  const load = useCallback(async () => {
-    if (!address) return;
-    setLoading(true);
-    try {
-      const res = await fetch(`/api/balances?address=${address}`);
-      if (res.ok) {
-        const data = (await res.json()) as { balances?: TokenBalance[] };
-        setBalances(data.balances ?? []);
-      }
-    } catch {
-      // silent — network errors shouldn't crash the UI
-    } finally {
-      setLoading(false);
-    }
-  }, [address]);
+  const fetchedRef = useRef<string | null>(null);
 
   useEffect(() => {
-    void load();
-  }, [load]);
+    if (!address) {
+      setLoading(false);
+      return;
+    }
 
-  return { balances, loading, reload: load };
+    // Don't refetch for the same address
+    if (fetchedRef.current === address) return;
+    fetchedRef.current = address;
+
+    let cancelled = false;
+    setLoading(true);
+
+    fetch(`/api/balances?address=${address}`)
+      .then((res) => (res.ok ? res.json() : { balances: [] }))
+      .then((data: { balances?: TokenBalance[] }) => {
+        if (!cancelled) {
+          setBalances(data.balances ?? []);
+          setLoading(false);
+        }
+      })
+      .catch(() => {
+        if (!cancelled) setLoading(false);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [address]);
+
+  function reload() {
+    if (!address) return;
+    fetchedRef.current = null; // Allow refetch
+    setLoading(true);
+    fetch(`/api/balances?address=${address}`)
+      .then((res) => (res.ok ? res.json() : { balances: [] }))
+      .then((data: { balances?: TokenBalance[] }) => {
+        setBalances(data.balances ?? []);
+        setLoading(false);
+      })
+      .catch(() => setLoading(false));
+  }
+
+  return { balances, loading, reload };
 }
