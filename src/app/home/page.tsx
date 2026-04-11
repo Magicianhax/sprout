@@ -20,8 +20,8 @@ import { Skeleton } from "@/components/ui/Skeleton";
 import { usePreferences } from "@/lib/hooks/usePreferences";
 import { usePositions } from "@/lib/hooks/usePositions";
 import { useVaults } from "@/lib/hooks/useVaults";
-import { formatCurrency, dailyEarnings } from "@/lib/format";
-import type { SortBy } from "@/lib/types";
+import { formatCurrency, dailyEarnings, getRiskLevel } from "@/lib/format";
+import type { SortBy, Vault } from "@/lib/types";
 
 function getGreeting(): string {
   const hour = new Date().getHours();
@@ -96,6 +96,30 @@ function LiteHome() {
   );
 }
 
+const ASSET_FILTERS = [
+  { label: "All", value: "all" },
+  { label: "Stables", value: "stables", symbols: ["USDC", "USDT", "DAI", "USDS", "FRAX", "LUSD", "CRVUSD", "GHO", "PYUSD", "TUSD"] },
+  { label: "ETH", value: "eth", symbols: ["ETH", "WETH", "STETH", "WSTETH", "RETH", "CBETH", "WEETH", "EETH", "METH", "SWETH", "OSETH", "SFRXETH"] },
+  { label: "BTC", value: "btc", symbols: ["BTC", "WBTC", "TBTC", "CBBTC", "SBTC", "RENBTC", "LBTC"] },
+  { label: "Low Risk", value: "low-risk" },
+];
+
+function filterVaultsByAsset(vaults: Vault[], filter: string): Vault[] {
+  if (filter === "all") return vaults;
+
+  if (filter === "low-risk") {
+    return vaults.filter((v) => getRiskLevel(v.tags) === "low");
+  }
+
+  const filterDef = ASSET_FILTERS.find((f) => f.value === filter);
+  if (!filterDef || !("symbols" in filterDef) || !filterDef.symbols) return vaults;
+
+  const symbols = new Set(filterDef.symbols.map((s) => s.toUpperCase()));
+  return vaults.filter((v) =>
+    v.underlyingTokens.some((t) => symbols.has(t.symbol.toUpperCase()))
+  );
+}
+
 function ProHome() {
   const { user } = usePrivy();
   const router = useRouter();
@@ -104,6 +128,7 @@ function ProHome() {
 
   const [selectedChains, setSelectedChains] = useState<number[]>([]);
   const [sortBy, setSortBy] = useState<SortBy>("tvl");
+  const [assetFilter, setAssetFilter] = useState<string>("all");
 
   const { vaults, loading, error, reload } = useVaults({
     chainIds: selectedChains.length > 0 ? selectedChains : undefined,
@@ -144,6 +169,23 @@ function ProHome() {
         <SortToggle value={sortBy} onChange={setSortBy} />
       </div>
 
+      {/* Asset filter pills */}
+      <div className="flex gap-2 px-5 mb-3 overflow-x-auto">
+        {ASSET_FILTERS.map((f) => (
+          <button
+            key={f.value}
+            onClick={() => setAssetFilter(f.value)}
+            className={`px-3.5 py-1.5 rounded-pill text-xs font-semibold whitespace-nowrap transition-colors cursor-pointer
+              ${assetFilter === f.value
+                ? "bg-sprout-green-primary text-white"
+                : "bg-white text-sprout-text-secondary border border-sprout-border"
+              }`}
+          >
+            {f.label}
+          </button>
+        ))}
+      </div>
+
       {/* Vault list */}
       {loading ? (
         <div className="flex flex-col gap-3 px-5">
@@ -162,7 +204,7 @@ function ProHome() {
         </div>
       ) : (
         <div className="flex flex-col gap-3">
-          {vaults.map((vault) => (
+          {filterVaultsByAsset(vaults, assetFilter).map((vault) => (
             <VaultCard
               key={`${vault.chainId}-${vault.address}`}
               vault={vault}
