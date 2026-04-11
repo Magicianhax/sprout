@@ -12,17 +12,20 @@ export async function fetchVaults(params?: {
   cursor?: string;
 }): Promise<VaultsResponse> {
   const searchParams = new URLSearchParams();
+  // API only accepts a single chainId — omit to get all, filter client-side
   if (params?.chainId) searchParams.set("chainId", String(params.chainId));
   if (params?.asset) searchParams.set("asset", params.asset);
   if (params?.sortBy) searchParams.set("sortBy", params.sortBy);
   if (params?.limit) searchParams.set("limit", String(params.limit));
   if (params?.cursor) searchParams.set("cursor", params.cursor);
-  if (!params?.chainId) {
-    SUPPORTED_CHAIN_IDS.forEach((id) => searchParams.append("chainId", String(id)));
-  }
   const res = await fetch(`${API_BASE}/v1/earn/vaults?${searchParams}`);
   if (!res.ok) throw new Error(`Earn API error: ${res.status}`);
-  return res.json();
+  const data: VaultsResponse = await res.json();
+  // Filter to supported chains client-side
+  if (!params?.chainId) {
+    data.data = data.data.filter((v) => SUPPORTED_CHAIN_IDS.includes(v.chainId as typeof SUPPORTED_CHAIN_IDS[number]));
+  }
+  return data;
 }
 
 export async function fetchChains(): Promise<Chain[]> {
