@@ -8,8 +8,7 @@ export interface UserPreferences {
 
 export interface VaultProtocol {
   name: string;
-  website?: string;
-  description?: string;
+  url?: string;
 }
 
 export interface UnderlyingToken {
@@ -48,20 +47,32 @@ export interface Vault {
 export interface VaultsResponse {
   data: Vault[];
   nextCursor?: string;
+  total?: number;
+}
+
+export interface PositionAsset {
+  address: string;
+  name: string;
+  symbol: string;
+  decimals: number;
 }
 
 export interface Position {
-  vault: Vault;
-  balance: number;
-  balanceUsd: number;
-  earnings: number;
-  earningsUsd: number;
+  chainId: number;
+  protocolName: string;
+  asset: PositionAsset;
+  balanceUsd: string;
+  balanceNative: string;
+}
+
+export interface PositionsResponse {
+  positions: Position[];
 }
 
 export interface Chain {
   chainId: number;
   name: string;
-  logoURI?: string;
+  networkCaip?: string;
 }
 
 export interface ComposerQuote {

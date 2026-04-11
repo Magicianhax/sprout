@@ -15,7 +15,7 @@ export function usePositions(address: string | undefined) {
     setError(null);
     try {
       const data = await fetchPositions(address);
-      setPositions(data);
+      setPositions(data.positions ?? []);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Couldn't load your positions");
     } finally {
@@ -25,8 +25,10 @@ export function usePositions(address: string | undefined) {
 
   useEffect(() => { load(); }, [load]);
 
-  const totalBalance = positions.reduce((sum, p) => sum + (p.balanceUsd || 0), 0);
-  const totalEarnings = positions.reduce((sum, p) => sum + (p.earningsUsd || 0), 0);
+  const totalBalance = positions.reduce(
+    (sum, p) => sum + parseFloat(p.balanceUsd || "0"),
+    0
+  );
 
-  return { positions, loading, error, reload: load, totalBalance, totalEarnings };
+  return { positions, loading, error, reload: load, totalBalance };
 }

@@ -1,5 +1,8 @@
-import { EARN_API_BASE, SUPPORTED_CHAIN_IDS } from "@/lib/constants";
-import type { Vault, VaultsResponse, Chain, Position } from "@/lib/types";
+import { SUPPORTED_CHAIN_IDS } from "@/lib/constants";
+import type { VaultsResponse, Chain, PositionsResponse } from "@/lib/types";
+
+// All calls go through our Next.js proxy to avoid CORS
+const PROXY_BASE = "/api/earn";
 
 export async function fetchVaults(params?: {
   chainId?: number;
@@ -17,25 +20,25 @@ export async function fetchVaults(params?: {
   if (!params?.chainId) {
     SUPPORTED_CHAIN_IDS.forEach((id) => searchParams.append("chainId", String(id)));
   }
-  const res = await fetch(`${EARN_API_BASE}/v1/earn/vaults?${searchParams}`);
+  const res = await fetch(`${PROXY_BASE}/v1/earn/vaults?${searchParams}`);
   if (!res.ok) throw new Error(`Earn API error: ${res.status}`);
   return res.json();
 }
 
 export async function fetchChains(): Promise<Chain[]> {
-  const res = await fetch(`${EARN_API_BASE}/v1/earn/chains`);
+  const res = await fetch(`${PROXY_BASE}/v1/earn/chains`);
   if (!res.ok) throw new Error(`Chains API error: ${res.status}`);
   return res.json();
 }
 
-export async function fetchProtocols(): Promise<{ name: string; website?: string; description?: string }[]> {
-  const res = await fetch(`${EARN_API_BASE}/v1/earn/protocols`);
+export async function fetchProtocols(): Promise<{ name: string; url?: string }[]> {
+  const res = await fetch(`${PROXY_BASE}/v1/earn/protocols`);
   if (!res.ok) throw new Error(`Protocols API error: ${res.status}`);
   return res.json();
 }
 
-export async function fetchPositions(address: string): Promise<Position[]> {
-  const res = await fetch(`${EARN_API_BASE}/v1/earn/portfolio/${address}/positions`);
+export async function fetchPositions(address: string): Promise<PositionsResponse> {
+  const res = await fetch(`${PROXY_BASE}/v1/earn/portfolio/${address}/positions`);
   if (!res.ok) throw new Error(`Positions API error: ${res.status}`);
   return res.json();
 }
