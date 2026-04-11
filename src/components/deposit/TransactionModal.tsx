@@ -87,7 +87,7 @@ export function TransactionModal({
         role="dialog"
       >
         {/* Modal card */}
-        <div className="bg-white rounded-3xl shadow-2xl w-full max-w-[340px] px-7 py-9 flex flex-col items-center text-center modal-slide-up">
+        <div className="bg-white rounded-3xl shadow-2xl w-full max-w-[340px] min-h-[380px] px-7 py-9 flex flex-col items-center justify-center text-center modal-slide-up">
 
           {/* ── CONFIRMING ─────────────────────────────────── */}
           {status === "confirming" && (
