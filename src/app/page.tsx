@@ -29,22 +29,6 @@ export default function LandingPage() {
       <div className="mt-10 w-full max-w-[320px]">
         <Button onClick={login} className="w-full text-lg py-5">Start Earning</Button>
       </div>
-      <div className="flex justify-center gap-5 mt-8">
-        <div className="text-center">
-          <div className="text-sm font-bold text-sprout-text-primary">$2.1B+</div>
-          <div className="text-[11px] text-sprout-text-muted">Total deposited</div>
-        </div>
-        <div className="w-px bg-sprout-border" />
-        <div className="text-center">
-          <div className="text-sm font-bold text-sprout-text-primary">5.2%</div>
-          <div className="text-[11px] text-sprout-text-muted">Avg. yearly rate</div>
-        </div>
-        <div className="w-px bg-sprout-border" />
-        <div className="text-center">
-          <div className="text-sm font-bold text-sprout-text-primary">20+</div>
-          <div className="text-[11px] text-sprout-text-muted">Partners</div>
-        </div>
-      </div>
       <p className="mt-auto mb-6 text-[11px] text-sprout-text-muted">Powered by LI.FI</p>
     </main>
   );

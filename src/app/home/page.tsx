@@ -20,7 +20,7 @@ import { Skeleton } from "@/components/ui/Skeleton";
 import { usePreferences } from "@/lib/hooks/usePreferences";
 import { usePositions } from "@/lib/hooks/usePositions";
 import { useVaults } from "@/lib/hooks/useVaults";
-import { formatCurrency, dailyEarnings, getRiskLevel } from "@/lib/format";
+import { formatCurrency, getRiskLevel } from "@/lib/format";
 import type { SortBy, Vault } from "@/lib/types";
 
 function getGreeting(): string {
@@ -135,10 +135,6 @@ function ProHome() {
     sortBy,
   });
 
-  // APY data is not available from the positions endpoint
-  const avgApy = 0;
-  const daily = dailyEarnings(totalBalance, avgApy);
-
   return (
     <main className="min-h-dvh bg-sprout-gradient pb-28">
       <Header />
@@ -149,9 +145,6 @@ function ProHome() {
           <div className="flex-1 min-w-0">
             <span className="font-heading text-base font-700 text-sprout-text-primary">
               {formatCurrency(totalBalance)}
-            </span>
-            <span className="text-xs text-sprout-text-muted ml-2">
-              +{formatCurrency(daily)}/day
             </span>
           </div>
           <span className="text-xs font-semibold text-sprout-text-secondary shrink-0">

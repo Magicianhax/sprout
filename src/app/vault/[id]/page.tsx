@@ -21,23 +21,6 @@ import {
 import { CHAIN_NAMES } from "@/lib/constants";
 import type { Vault } from "@/lib/types";
 
-type TimeRange = "1W" | "1M" | "1Y";
-type ChartMode = "Rate" | "TVL";
-
-const TIME_RANGES: TimeRange[] = ["1W", "1M", "1Y"];
-const CHART_MODES: ChartMode[] = ["Rate", "TVL"];
-
-const RATE_PATHS: Record<TimeRange, string> = {
-  "1W": "M0,80 C20,75 40,68 60,60 C80,52 100,50 120,44 C140,38 160,32 180,25 C200,18 220,14 240,10",
-  "1M": "M0,85 C30,78 60,70 90,58 C120,46 150,38 180,28 C210,18 230,12 240,8",
-  "1Y": "M0,90 C40,82 80,72 110,58 C140,44 160,34 180,22 C200,12 220,6 240,4",
-};
-
-const TVL_PATHS: Record<TimeRange, string> = {
-  "1W": "M0,70 C20,65 40,62 60,58 C80,54 100,56 120,52 C140,48 160,44 180,40 C200,36 220,32 240,30",
-  "1M": "M0,75 C30,70 60,65 90,55 C120,45 150,40 180,35 C210,28 230,22 240,18",
-  "1Y": "M0,80 C40,72 80,65 110,52 C140,40 160,30 180,20 C200,14 220,10 240,8",
-};
 
 const RISK_DESCRIPTIONS: Record<"low" | "medium" | "high", string> = {
   low: "This vault holds stablecoin assets with minimal price volatility. Smart contract risk is present in all DeFi protocols, but this vault uses audited, battle-tested code. Suitable for users who want to preserve principal while earning yield.",
@@ -58,91 +41,12 @@ const TAG_LABELS: Record<string, string> = {
 };
 
 function RateHistoryChart() {
-  const [timeRange, setTimeRange] = useState<TimeRange>("1M");
-  const [chartMode, setChartMode] = useState<ChartMode>("Rate");
-
-  const paths = chartMode === "Rate" ? RATE_PATHS : TVL_PATHS;
-  const strokeColor = chartMode === "Rate" ? "#4CAF50" : "#F59E0B";
-  const gradientStart = chartMode === "Rate" ? "#4CAF50" : "#F59E0B";
-
-  const path = paths[timeRange];
-
   return (
     <div className="px-5">
-      <div className="flex items-center justify-between mb-3">
-        <div className="flex gap-1">
-          {TIME_RANGES.map((r) => (
-            <button
-              key={r}
-              onClick={() => setTimeRange(r)}
-              className={`px-3 py-1 rounded-pill text-xs font-semibold transition-all cursor-pointer
-                ${
-                  timeRange === r
-                    ? "bg-sprout-green-primary text-white"
-                    : "bg-sprout-green-light text-sprout-green-dark"
-                }`}
-            >
-              {r}
-            </button>
-          ))}
-        </div>
-        <div className="flex gap-1">
-          {CHART_MODES.map((m) => (
-            <button
-              key={m}
-              onClick={() => setChartMode(m)}
-              className={`px-3 py-1 rounded-pill text-xs font-semibold transition-all cursor-pointer
-                ${
-                  chartMode === m
-                    ? "bg-sprout-text-primary text-white"
-                    : "bg-gray-100 text-gray-500"
-                }`}
-            >
-              {m}
-            </button>
-          ))}
-        </div>
-      </div>
-
-      <div className="relative h-28 w-full overflow-hidden rounded-2xl">
-        <svg
-          viewBox="0 0 240 100"
-          preserveAspectRatio="none"
-          className="w-full h-full"
-        >
-          <defs>
-            <linearGradient
-              id="vaultChartGradient"
-              x1="0"
-              y1="0"
-              x2="0"
-              y2="1"
-            >
-              <stop
-                offset="0%"
-                stopColor={gradientStart}
-                stopOpacity="0.25"
-              />
-              <stop
-                offset="100%"
-                stopColor={gradientStart}
-                stopOpacity="0.02"
-              />
-            </linearGradient>
-          </defs>
-          <path
-            d={`${path} L240,100 L0,100 Z`}
-            fill="url(#vaultChartGradient)"
-          />
-          <path
-            d={path}
-            fill="none"
-            stroke={strokeColor}
-            strokeWidth="2"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-          />
-        </svg>
+      <div className="h-28 w-full flex items-center justify-center rounded-2xl bg-sprout-green-light/40">
+        <p className="text-xs text-sprout-text-muted">
+          Rate history coming soon
+        </p>
       </div>
     </div>
   );
