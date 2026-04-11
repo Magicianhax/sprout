@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { usePrivy } from "@privy-io/react-auth";
+import { usePrivy, useWallets } from "@privy-io/react-auth";
 import { ArrowLeft } from "lucide-react";
 import { AuthGuard } from "@/components/layout/AuthGuard";
 import { Button } from "@/components/ui/Button";
@@ -18,7 +18,8 @@ type WithdrawStatus = "idle" | "quoting" | "confirming" | "success" | "error";
 function WithdrawPageContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const { user, sendTransaction } = usePrivy();
+  const { user } = usePrivy();
+  const { wallets } = useWallets();
 
   const vault = searchParams.get("vault") ?? "";
   const chainId = Number(searchParams.get("chainId") ?? "0");
@@ -103,19 +104,35 @@ function WithdrawPageContent() {
   async function handleConfirm() {
     if (!quote || !walletAddress) return;
 
+    const wallet = wallets.find((w) => w.address.toLowerCase() === walletAddress.toLowerCase()) ?? wallets[0];
+    if (!wallet) {
+      setErrorMessage("No wallet found. Please reconnect.");
+      setStatus("error");
+      return;
+    }
+
     setStatus("confirming");
     setErrorMessage("");
 
     try {
       const { transactionRequest } = quote;
-      const result = await sendTransaction({
-        to: transactionRequest.to,
-        data: transactionRequest.data,
-        value: transactionRequest.value,
-        chainId: transactionRequest.chainId,
-        gasLimit: transactionRequest.gasLimit,
+
+      await wallet.switchChain(transactionRequest.chainId);
+
+      const provider = await wallet.getEthereumProvider();
+      const txHash = await provider.request({
+        method: "eth_sendTransaction",
+        params: [{
+          from: walletAddress,
+          to: transactionRequest.to,
+          data: transactionRequest.data,
+          value: transactionRequest.value && transactionRequest.value !== "0"
+            ? `0x${BigInt(transactionRequest.value).toString(16)}`
+            : undefined,
+        }],
       });
-      setTxHash(result.hash);
+
+      setTxHash(txHash as string);
       setStatus("success");
     } catch (err) {
       const message = err instanceof Error ? err.message : "Transaction failed";
