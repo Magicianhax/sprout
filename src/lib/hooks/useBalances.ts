@@ -1,5 +1,5 @@
 "use client";
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useCallback } from "react";
 
 export interface TokenBalance {
   symbol: string;
@@ -11,17 +11,12 @@ export interface TokenBalance {
 export function useBalances(address: string | undefined) {
   const [balances, setBalances] = useState<TokenBalance[]>([]);
   const [loading, setLoading] = useState(true);
-  const fetchedRef = useRef<string | null>(null);
 
   useEffect(() => {
     if (!address) {
       setLoading(false);
       return;
     }
-
-    // Don't refetch for the same address
-    if (fetchedRef.current === address) return;
-    fetchedRef.current = address;
 
     let cancelled = false;
     setLoading(true);
@@ -38,14 +33,11 @@ export function useBalances(address: string | undefined) {
         if (!cancelled) setLoading(false);
       });
 
-    return () => {
-      cancelled = true;
-    };
+    return () => { cancelled = true; };
   }, [address]);
 
-  function reload() {
+  const reload = useCallback(() => {
     if (!address) return;
-    fetchedRef.current = null; // Allow refetch
     setLoading(true);
     fetch(`/api/balances?address=${address}`)
       .then((res) => (res.ok ? res.json() : { balances: [] }))
@@ -54,7 +46,7 @@ export function useBalances(address: string | undefined) {
         setLoading(false);
       })
       .catch(() => setLoading(false));
-  }
+  }, [address]);
 
   return { balances, loading, reload };
 }

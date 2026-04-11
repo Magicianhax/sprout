@@ -33,18 +33,17 @@ export function AmountInput({
 
   return (
     <div className="flex flex-col items-center gap-3">
-      <div className="w-full py-3">
-        <div className="flex items-baseline justify-center">
-          <span className="text-3xl font-bold text-sprout-text-secondary select-none">$</span>
-          <input
-            type="text"
-            inputMode="decimal"
-            value={value}
-            onChange={handleChange}
-            placeholder="0.00"
-            className="text-4xl font-bold text-sprout-text-primary bg-transparent outline-none placeholder:text-sprout-text-muted text-left w-[160px]"
-          />
-        </div>
+      <div className="flex items-baseline justify-center w-full py-3">
+        <span className="text-3xl font-bold text-sprout-text-secondary select-none">$</span>
+        <input
+          type="text"
+          inputMode="decimal"
+          value={value}
+          onChange={handleChange}
+          placeholder="0.00"
+          className="text-4xl font-bold text-sprout-text-primary bg-transparent outline-none placeholder:text-sprout-text-muted"
+          style={{ width: `${Math.max((value || "0.00").length, 4) * 0.65}em` }}
+        />
       </div>
 
       {/* Balance row — hide only while still loading and balance is 0 */}
