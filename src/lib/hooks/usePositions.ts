@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback } from "react";
 import type { Position } from "@/lib/types";
 import { fetchPositions } from "@/lib/api/earn";
+import { SUPPORTED_CHAIN_IDS } from "@/lib/constants";
 
 export function usePositions(address: string | undefined) {
   const [positions, setPositions] = useState<Position[]>([]);
@@ -15,7 +16,10 @@ export function usePositions(address: string | undefined) {
     setError(null);
     try {
       const data = await fetchPositions(address);
-      setPositions(data.positions ?? []);
+      const supported = (data.positions ?? []).filter(
+        (p) => SUPPORTED_CHAIN_IDS.includes(p.chainId as typeof SUPPORTED_CHAIN_IDS[number])
+      );
+      setPositions(supported);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Couldn't load your positions");
     } finally {
