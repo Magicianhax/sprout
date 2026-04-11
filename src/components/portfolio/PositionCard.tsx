@@ -18,6 +18,19 @@ export function PositionCard({ position, showDetails }: PositionCardProps) {
   const chainName = CHAIN_NAMES[chainId] ?? `Chain ${chainId}`;
   const balanceUsdNum = parseFloat(balanceUsd || "0");
 
+  function handleStopEarning(e: React.MouseEvent) {
+    e.stopPropagation();
+    const params = new URLSearchParams({
+      vault: asset.address,
+      chainId: String(chainId),
+      protocolName,
+      asset: asset.address,
+      assetSymbol: asset.symbol,
+      assetDecimals: String(asset.decimals),
+    });
+    router.push(`/withdraw?${params.toString()}`);
+  }
+
   const handleClick = showDetails
     ? () => router.push(`/vault?chainId=${chainId}`)
     : undefined;
@@ -62,6 +75,13 @@ export function PositionCard({ position, showDetails }: PositionCardProps) {
             {balanceNative} {asset.symbol}
           </p>
         </div>
+
+        <button
+          className="text-xs font-semibold text-sprout-red-stop cursor-pointer py-1 px-2"
+          onClick={handleStopEarning}
+        >
+          Stop Earning
+        </button>
       </div>
     </Card>
   );

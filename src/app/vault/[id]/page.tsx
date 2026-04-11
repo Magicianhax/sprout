@@ -173,7 +173,16 @@ function VaultDetailContent({ vault, chainId }: { vault: Vault; chainId: number 
   }
 
   function handleStopEarning() {
-    alert("Withdraw flow coming soon.");
+    const token = vault.underlyingTokens[0];
+    const params = new URLSearchParams({
+      vault: vault.address,
+      chainId: String(vault.chainId),
+      protocolName: vault.protocol.name,
+      asset: token?.address ?? "",
+      assetSymbol: token?.symbol ?? "",
+      assetDecimals: String(token?.decimals ?? 18),
+    });
+    router.push(`/withdraw?${params.toString()}`);
   }
 
   return (
