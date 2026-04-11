@@ -14,7 +14,7 @@ import { usePreferences } from "@/lib/hooks/usePreferences";
 import { getDepositQuote } from "@/lib/api/composer";
 import { fetchVaults } from "@/lib/api/earn";
 import { toTokenUnits } from "@/lib/format";
-import { SUPPORTED_TOKENS } from "@/lib/constants";
+import { SUPPORTED_TOKENS, CHAIN_NAMES } from "@/lib/constants";
 import type { ComposerQuote, Vault } from "@/lib/types";
 
 type DepositStatus = "idle" | "quoting" | "confirming" | "success" | "error";
@@ -27,13 +27,7 @@ const TOKEN_DECIMALS: Record<string, number> = {
   DAI: 18,
 };
 
-const MOCK_WALLET_BALANCE: Record<string, number> = {
-  USDC: 1200,
-  USDT: 800,
-  ETH: 0.5,
-  WBTC: 0.01,
-  DAI: 500,
-};
+// Real balance will come from positions or we show 0 and let user enter amount
 
 function isValidToken(symbol: string): boolean {
   return SUPPORTED_TOKENS.some((t) => t.symbol === symbol);
@@ -101,11 +95,14 @@ function DepositPageContent() {
     setQuoteError("");
 
     try {
+      const underlyingToken = vault.underlyingTokens[0];
+      if (!underlyingToken) throw new Error("Vault has no underlying token");
+
       const result = await getDepositQuote({
         fromChain: vault.chainId,
         toChain: vault.chainId,
-        fromToken: selectedToken,
-        toToken: vault.underlyingTokens[0]?.address ?? selectedToken,
+        fromToken: underlyingToken.address,  // user's token address
+        toToken: vault.address,              // vault address (NOT underlying token)
         fromAmount,
         fromAddress: walletAddress,
       });
@@ -156,7 +153,7 @@ function DepositPageContent() {
   const networkFeeUsd = quote
     ? parseFloat(quote.estimate.gasCosts[0]?.amountUSD ?? "0")
     : 0;
-  const walletBalance = MOCK_WALLET_BALANCE[selectedToken] ?? 0;
+  const walletBalance = 0; // Real balance requires on-chain query — user enters amount directly
 
   if (status === "success") {
     return (
@@ -194,7 +191,7 @@ function DepositPageContent() {
         >
           <ArrowLeft size={22} />
         </button>
-        <h1 className="font-heading text-xl font-bold text-sprout-text-primary">Deposit</h1>
+        <h1 className="font-heading text-xl font-bold text-sprout-text-primary">Start Earning</h1>
       </div>
 
       <div className="flex flex-col gap-5 px-5 pb-10 flex-1 overflow-y-auto">
@@ -242,22 +239,16 @@ function DepositPageContent() {
 
         {/* Vault info strip */}
         {vault && (
-          <div className="flex items-center justify-between text-xs text-sprout-text-muted px-1">
-            <span>{vault.protocol.name}</span>
-            <span>
-              {vault.chainId === 1
-                ? "Ethereum"
-                : vault.chainId === 8453
-                ? "Base"
-                : vault.chainId === 42161
-                ? "Arbitrum"
-                : vault.chainId === 10
-                ? "Optimism"
-                : vault.chainId === 137
-                ? "Polygon"
-                : `Chain ${vault.chainId}`}
-            </span>
-          </div>
+          <Card shadow="subtle" className="!p-3">
+            <div className="flex items-center justify-between text-xs">
+              <span className="text-sprout-text-secondary font-medium">{vault.protocol.name}</span>
+              <span className="text-sprout-text-secondary font-medium">{CHAIN_NAMES[vault.chainId] ?? `Chain ${vault.chainId}`}</span>
+            </div>
+            <div className="flex items-center justify-between text-xs mt-1">
+              <span className="text-sprout-green-dark font-semibold">{vault.analytics.apy.total.toFixed(1)}% yearly</span>
+              <span className="text-sprout-text-muted">{vault.underlyingTokens[0]?.symbol} vault</span>
+            </div>
+          </Card>
         )}
 
         {/* Error state */}
@@ -276,7 +267,7 @@ function DepositPageContent() {
           loading={status === "confirming"}
           onClick={() => void handleConfirm()}
         >
-          {status === "confirming" ? "Confirming…" : "Confirm Deposit"}
+          {status === "confirming" ? "Confirming…" : "Confirm"}
         </Button>
         <p className="text-center text-[11px] text-sprout-text-muted mt-4">Powered by LI.FI</p>
       </div>
