@@ -1,8 +1,14 @@
 import { SUPPORTED_CHAIN_IDS } from "@/lib/constants";
 import type { VaultsResponse, Chain, PositionsResponse } from "@/lib/types";
 
-// All calls go through our Next.js proxy to avoid CORS
-const PROXY_BASE = "/api/earn";
+const EARN_API_BASE = "https://earn.li.fi";
+
+function getHeaders(): Record<string, string> {
+  const h: Record<string, string> = {};
+  const key = process.env.NEXT_PUBLIC_LIFI_API_KEY;
+  if (key) h["x-lifi-api-key"] = key;
+  return h;
+}
 
 export async function fetchVaults(params?: {
   chainId?: number;
@@ -20,25 +26,25 @@ export async function fetchVaults(params?: {
   if (!params?.chainId) {
     SUPPORTED_CHAIN_IDS.forEach((id) => searchParams.append("chainId", String(id)));
   }
-  const res = await fetch(`${PROXY_BASE}/v1/earn/vaults?${searchParams}`);
+  const res = await fetch(`${EARN_API_BASE}/v1/earn/vaults?${searchParams}`, { headers: getHeaders() });
   if (!res.ok) throw new Error(`Earn API error: ${res.status}`);
   return res.json();
 }
 
 export async function fetchChains(): Promise<Chain[]> {
-  const res = await fetch(`${PROXY_BASE}/v1/earn/chains`);
+  const res = await fetch(`${EARN_API_BASE}/v1/earn/chains`, { headers: getHeaders() });
   if (!res.ok) throw new Error(`Chains API error: ${res.status}`);
   return res.json();
 }
 
 export async function fetchProtocols(): Promise<{ name: string; url?: string }[]> {
-  const res = await fetch(`${PROXY_BASE}/v1/earn/protocols`);
+  const res = await fetch(`${EARN_API_BASE}/v1/earn/protocols`, { headers: getHeaders() });
   if (!res.ok) throw new Error(`Protocols API error: ${res.status}`);
   return res.json();
 }
 
 export async function fetchPositions(address: string): Promise<PositionsResponse> {
-  const res = await fetch(`${PROXY_BASE}/v1/earn/portfolio/${address}/positions`);
+  const res = await fetch(`${EARN_API_BASE}/v1/earn/portfolio/${address}/positions`, { headers: getHeaders() });
   if (!res.ok) throw new Error(`Positions API error: ${res.status}`);
   return res.json();
 }
