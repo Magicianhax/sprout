@@ -207,6 +207,7 @@ function DepositPageContent() {
     ? parseFloat(quote.estimate.gasCosts[0]?.amountUSD ?? "0")
     : 0;
   const isCrossChain = vault !== null && tokenSelection.chainId !== vault.chainId;
+  const isLite = preferences.mode === "lite";
 
   const modalStatus =
     status === "confirming" || status === "success" || status === "error" ? status : null;
@@ -225,97 +226,140 @@ function DepositPageContent() {
         <h1 className="font-heading text-xl font-bold text-sprout-text-primary">Start Earning</h1>
       </div>
 
-      <div className="flex flex-col gap-5 px-5 pb-10 flex-1 overflow-y-auto">
-        {/* Token selector */}
-        <Card>
-          <p className="text-xs font-semibold text-sprout-text-secondary uppercase tracking-wide mb-3">
-            Select Token
-          </p>
-          <TokenSelector
-            selected={tokenSelection}
-            vaultChainId={vault?.chainId ?? 8453}
-            onChange={setTokenSelection}
-            balances={walletBalances}
-            balancesLoading={balancesLoading}
-          />
-        </Card>
+      {isLite ? (
+        /* ───── LITE MODE: ultra-simple ───── */
+        <>
+          <div className="flex flex-col gap-6 px-5 pb-10 flex-1 items-center justify-center">
+            <div className="text-center">
+              <p className="text-sprout-text-secondary text-sm mb-1">How much do you want to earn on?</p>
+              <p className="text-xs text-sprout-text-muted">
+                {selectedTokenBalance > 0
+                  ? `You have ${selectedTokenBalance.toFixed(2)} ${tokenSelection.symbol}`
+                  : balancesLoading
+                  ? "Checking balance..."
+                  : ""}
+              </p>
+            </div>
 
-        {/* Cross-chain route indicator */}
-        {isCrossChain && vault && (
-          <div className="flex items-center gap-2 px-1">
-            <div className="h-px flex-1 bg-sprout-border" />
-            <span className="text-xs text-sprout-text-muted whitespace-nowrap">
-              {CHAIN_NAMES[tokenSelection.chainId] ?? tokenSelection.chainId}
-              {" → "}
-              {CHAIN_NAMES[vault.chainId] ?? vault.chainId}
-            </span>
-            <div className="h-px flex-1 bg-sprout-border" />
-          </div>
-        )}
-
-        {/* Amount input */}
-        <Card>
-          <p className="text-xs font-semibold text-sprout-text-secondary uppercase tracking-wide mb-3">
-            Amount
-          </p>
-          <AmountInput
-            value={amount}
-            onChange={setAmount}
-            balance={selectedTokenBalance}
-            symbol={tokenSelection.symbol}
-            balanceLoading={balancesLoading}
-          />
-        </Card>
-
-        {/* Preview — only shown when amount is valid */}
-        {validAmount && vault && (
-          <>
-            {status === "quoting" ? (
-              <div className="text-center py-4 text-sm text-sprout-text-muted animate-pulse">
-                Fetching best rate…
-              </div>
-            ) : quoteError ? (
-              <div className="bg-red-50 rounded-2xl px-4 py-3 text-sm text-red-600">
-                {quoteError}
-              </div>
-            ) : (
-              <DepositPreview
-                amount={numericAmount}
-                apyPercent={apy}
-                networkFeeUsd={networkFeeUsd}
+            <div className="w-full max-w-[300px]">
+              <AmountInput
+                value={amount}
+                onChange={setAmount}
+                balance={selectedTokenBalance}
+                symbol={tokenSelection.symbol}
+                balanceLoading={balancesLoading}
               />
+            </div>
+
+            {status === "quoting" && validAmount && (
+              <p className="text-xs text-sprout-text-muted animate-pulse">Finding best rate...</p>
             )}
-          </>
-        )}
+            {quoteError && (
+              <p className="text-xs text-red-500">{quoteError}</p>
+            )}
+          </div>
 
-        {/* Vault info strip */}
-        {vault && (
-          <Card shadow="subtle" className="!p-3">
-            <div className="flex items-center justify-between text-xs">
-              <span className="text-sprout-text-secondary font-medium">{vault.protocol.name}</span>
-              <span className="text-sprout-text-secondary font-medium">{CHAIN_NAMES[vault.chainId] ?? `Chain ${vault.chainId}`}</span>
-            </div>
-            <div className="flex items-center justify-between text-xs mt-1">
-              <span className="text-sprout-green-dark font-semibold">{vault.analytics.apy.total.toFixed(1)}% yearly</span>
-              <span className="text-sprout-text-muted">{vault.underlyingTokens[0]?.symbol} vault</span>
-            </div>
-          </Card>
-        )}
+          <div className="px-5 pb-8 pt-2 bg-sprout-gradient">
+            <Button
+              className="w-full"
+              disabled={!validAmount || !vault || !quote || status === "confirming" || status === "quoting"}
+              loading={status === "quoting" || status === "confirming"}
+              onClick={() => void handleConfirm()}
+            >
+              {status === "quoting" ? "Finding best rate..." : status === "confirming" ? "Confirming..." : "Start Earning"}
+            </Button>
+            <p className="text-center text-[11px] text-sprout-text-muted mt-4">Powered by LI.FI</p>
+          </div>
+        </>
+      ) : (
+        /* ───── PRO MODE: full details ───── */
+        <>
+          <div className="flex flex-col gap-5 px-5 pb-10 flex-1 overflow-y-auto">
+            <Card>
+              <p className="text-xs font-semibold text-sprout-text-secondary uppercase tracking-wide mb-3">
+                Select Token
+              </p>
+              <TokenSelector
+                selected={tokenSelection}
+                vaultChainId={vault?.chainId ?? 8453}
+                onChange={setTokenSelection}
+                balances={walletBalances}
+                balancesLoading={balancesLoading}
+              />
+            </Card>
 
-      </div>
+            {isCrossChain && vault && (
+              <div className="flex items-center gap-2 px-1">
+                <div className="h-px flex-1 bg-sprout-border" />
+                <span className="text-xs text-sprout-text-muted whitespace-nowrap">
+                  {CHAIN_NAMES[tokenSelection.chainId] ?? tokenSelection.chainId}
+                  {" → "}
+                  {CHAIN_NAMES[vault.chainId] ?? vault.chainId}
+                </span>
+                <div className="h-px flex-1 bg-sprout-border" />
+              </div>
+            )}
 
-      {/* CTA */}
-      <div className="px-5 pb-8 pt-2 bg-sprout-gradient">
-        <Button
-          className="w-full"
-          disabled={!validAmount || !vault || !quote || status === "confirming" || status === "quoting"}
-          loading={status === "confirming"}
-          onClick={() => void handleConfirm()}
-        >
-          {status === "confirming" ? "Confirming…" : "Confirm"}
-        </Button>
-        <p className="text-center text-[11px] text-sprout-text-muted mt-4">Powered by LI.FI</p>
-      </div>
+            <Card>
+              <p className="text-xs font-semibold text-sprout-text-secondary uppercase tracking-wide mb-3">
+                Amount
+              </p>
+              <AmountInput
+                value={amount}
+                onChange={setAmount}
+                balance={selectedTokenBalance}
+                symbol={tokenSelection.symbol}
+                balanceLoading={balancesLoading}
+              />
+            </Card>
+
+            {validAmount && vault && (
+              <>
+                {status === "quoting" ? (
+                  <div className="text-center py-4 text-sm text-sprout-text-muted animate-pulse">
+                    Fetching best rate…
+                  </div>
+                ) : quoteError ? (
+                  <div className="bg-red-50 rounded-2xl px-4 py-3 text-sm text-red-600">
+                    {quoteError}
+                  </div>
+                ) : (
+                  <DepositPreview
+                    amount={numericAmount}
+                    apyPercent={apy}
+                    networkFeeUsd={networkFeeUsd}
+                  />
+                )}
+              </>
+            )}
+
+            {vault && (
+              <Card shadow="subtle" className="!p-3">
+                <div className="flex items-center justify-between text-xs">
+                  <span className="text-sprout-text-secondary font-medium">{vault.protocol.name}</span>
+                  <span className="text-sprout-text-secondary font-medium">{CHAIN_NAMES[vault.chainId] ?? `Chain ${vault.chainId}`}</span>
+                </div>
+                <div className="flex items-center justify-between text-xs mt-1">
+                  <span className="text-sprout-green-dark font-semibold">{vault.analytics.apy.total.toFixed(1)}% yearly</span>
+                  <span className="text-sprout-text-muted">{vault.underlyingTokens[0]?.symbol} vault</span>
+                </div>
+              </Card>
+            )}
+          </div>
+
+          <div className="px-5 pb-8 pt-2 bg-sprout-gradient">
+            <Button
+              className="w-full"
+              disabled={!validAmount || !vault || !quote || status === "confirming" || status === "quoting"}
+              loading={status === "confirming"}
+              onClick={() => void handleConfirm()}
+            >
+              {status === "confirming" ? "Confirming…" : "Confirm"}
+            </Button>
+            <p className="text-center text-[11px] text-sprout-text-muted mt-4">Powered by LI.FI</p>
+          </div>
+        </>
+      )}
 
       <TransactionModal
         status={modalStatus}
