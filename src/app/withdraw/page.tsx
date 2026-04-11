@@ -8,6 +8,7 @@ import { AuthGuard } from "@/components/layout/AuthGuard";
 import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
 import { Badge } from "@/components/ui/Badge";
+import { TransactionModal } from "@/components/deposit/TransactionModal";
 import { getWithdrawQuote } from "@/lib/api/composer";
 import { getWithdrawMethod } from "@/lib/withdrawal";
 import { toTokenUnits, formatCurrency, formatTokenAmount } from "@/lib/format";
@@ -148,30 +149,8 @@ function WithdrawPageContent() {
     ? parseFloat(quote.estimate.gasCosts[0]?.amountUSD ?? "0")
     : 0;
 
-  if (status === "success") {
-    return (
-      <main className="flex flex-col items-center justify-center min-h-dvh px-5 bg-sprout-gradient">
-        <div className="w-20 h-20 rounded-full bg-sprout-green-light flex items-center justify-center mb-6">
-          <span className="text-4xl">🌿</span>
-        </div>
-        <h1 className="font-heading text-2xl font-bold text-sprout-green-dark mb-2">
-          Withdrawal Confirmed!
-        </h1>
-        <p className="text-sm text-sprout-text-secondary text-center mb-6">
-          Your funds are on the way. It may take a moment to arrive.
-        </p>
-        {txHash && (
-          <p className="text-xs text-sprout-text-muted font-mono break-all text-center mb-6 max-w-xs">
-            Tx: {txHash}
-          </p>
-        )}
-        <Button className="w-full max-w-xs" onClick={() => router.replace("/home")}>
-          Back to Home
-        </Button>
-        <p className="mt-8 text-[11px] text-sprout-text-muted">Powered by LI.FI</p>
-      </main>
-    );
-  }
+  const modalStatus =
+    status === "confirming" || status === "success" || status === "error" ? status : null;
 
   return (
     <main className="flex flex-col min-h-dvh bg-sprout-gradient">
@@ -281,12 +260,6 @@ function WithdrawPageContent() {
           </div>
         )}
 
-        {/* Error state */}
-        {status === "error" && errorMessage && (
-          <div className="bg-red-50 rounded-2xl px-4 py-3 text-sm text-red-600">
-            {errorMessage}
-          </div>
-        )}
       </div>
 
       {/* CTA */}
@@ -302,6 +275,15 @@ function WithdrawPageContent() {
         </Button>
         <p className="text-center text-[11px] text-sprout-text-muted mt-4">Powered by LI.FI</p>
       </div>
+
+      <TransactionModal
+        status={modalStatus}
+        txHash={txHash}
+        chainId={chainId}
+        errorMessage={errorMessage}
+        onClose={() => router.replace("/home")}
+        onRetry={() => setStatus("idle")}
+      />
     </main>
   );
 }

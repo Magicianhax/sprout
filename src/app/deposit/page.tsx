@@ -8,6 +8,7 @@ import { AuthGuard } from "@/components/layout/AuthGuard";
 import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
 import { TokenSelector, type TokenSelection } from "@/components/deposit/TokenSelector";
+import { TransactionModal } from "@/components/deposit/TransactionModal";
 import { TOKEN_ADDRESSES, TOKEN_DECIMALS } from "@/lib/constants";
 import { useBalances } from "@/lib/hooks/useBalances";
 import { AmountInput } from "@/components/deposit/AmountInput";
@@ -199,30 +200,8 @@ function DepositPageContent() {
     : 0;
   const isCrossChain = vault !== null && tokenSelection.chainId !== vault.chainId;
 
-  if (status === "success") {
-    return (
-      <main className="flex flex-col items-center justify-center min-h-dvh px-5 bg-sprout-gradient">
-        <div className="w-20 h-20 rounded-full bg-sprout-green-light flex items-center justify-center mb-6">
-          <span className="text-4xl">🌱</span>
-        </div>
-        <h1 className="font-heading text-2xl font-bold text-sprout-green-dark mb-2">
-          Deposit Confirmed!
-        </h1>
-        <p className="text-sm text-sprout-text-secondary text-center mb-6">
-          Your funds are now earning. It may take a moment to reflect.
-        </p>
-        {txHash && (
-          <p className="text-xs text-sprout-text-muted font-mono break-all text-center mb-6 max-w-xs">
-            Tx: {txHash}
-          </p>
-        )}
-        <Button className="w-full max-w-xs" onClick={() => router.replace("/home")}>
-          Back to Home
-        </Button>
-        <p className="mt-8 text-[11px] text-sprout-text-muted">Powered by LI.FI</p>
-      </main>
-    );
-  }
+  const modalStatus =
+    status === "confirming" || status === "success" || status === "error" ? status : null;
 
   return (
     <main className="flex flex-col min-h-dvh bg-sprout-gradient">
@@ -314,12 +293,6 @@ function DepositPageContent() {
           </Card>
         )}
 
-        {/* Error state */}
-        {status === "error" && errorMessage && (
-          <div className="bg-red-50 rounded-2xl px-4 py-3 text-sm text-red-600">
-            {errorMessage}
-          </div>
-        )}
       </div>
 
       {/* CTA */}
@@ -334,6 +307,15 @@ function DepositPageContent() {
         </Button>
         <p className="text-center text-[11px] text-sprout-text-muted mt-4">Powered by LI.FI</p>
       </div>
+
+      <TransactionModal
+        status={modalStatus}
+        txHash={txHash}
+        chainId={vault?.chainId}
+        errorMessage={errorMessage}
+        onClose={() => router.replace("/home")}
+        onRetry={() => setStatus("idle")}
+      />
     </main>
   );
 }
