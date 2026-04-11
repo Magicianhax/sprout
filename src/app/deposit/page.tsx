@@ -7,7 +7,9 @@ import { ArrowLeft } from "lucide-react";
 import { AuthGuard } from "@/components/layout/AuthGuard";
 import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
-import { TokenSelector, TOKEN_ADDRESSES, TOKEN_DECIMALS, type TokenSelection } from "@/components/deposit/TokenSelector";
+import { TokenSelector, type TokenSelection } from "@/components/deposit/TokenSelector";
+import { TOKEN_ADDRESSES, TOKEN_DECIMALS } from "@/lib/constants";
+import { useBalances } from "@/lib/hooks/useBalances";
 import { AmountInput } from "@/components/deposit/AmountInput";
 import { DepositPreview } from "@/components/deposit/DepositPreview";
 import { usePreferences } from "@/lib/hooks/usePreferences";
@@ -57,6 +59,17 @@ function DepositPageContent() {
   const [quoteError, setQuoteError] = useState<string>("");
 
   const walletAddress = user?.wallet?.address ?? "";
+
+  // Real wallet balances across all chains
+  const { balances: walletBalances, loading: balancesLoading } = useBalances(
+    walletAddress || undefined,
+  );
+
+  // Find balance for the currently selected token+chain
+  const selectedTokenBalance =
+    walletBalances.find(
+      (b) => b.symbol === tokenSelection.symbol && b.chainId === tokenSelection.chainId,
+    )?.balanceFormatted ?? 0;
 
   // Resolve vault: pro mode uses URL params, lite mode auto-fetches highest TVL
   useEffect(() => {
@@ -163,8 +176,6 @@ function DepositPageContent() {
   const networkFeeUsd = quote
     ? parseFloat(quote.estimate.gasCosts[0]?.amountUSD ?? "0")
     : 0;
-  const walletBalance = 0;
-
   const isCrossChain = vault !== null && tokenSelection.chainId !== vault.chainId;
 
   if (status === "success") {
@@ -216,6 +227,7 @@ function DepositPageContent() {
             selected={tokenSelection}
             vaultChainId={vault?.chainId ?? 8453}
             onChange={setTokenSelection}
+            walletAddress={walletAddress || undefined}
           />
         </Card>
 
@@ -240,8 +252,9 @@ function DepositPageContent() {
           <AmountInput
             value={amount}
             onChange={setAmount}
-            balance={walletBalance}
+            balance={selectedTokenBalance}
             symbol={tokenSelection.symbol}
+            balanceLoading={balancesLoading}
           />
         </Card>
 

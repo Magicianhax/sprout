@@ -5,16 +5,22 @@ interface AmountInputProps {
   onChange: (value: string) => void;
   balance: number;
   symbol: string;
+  balanceLoading?: boolean;
 }
 
-export function AmountInput({ value, onChange, balance, symbol }: AmountInputProps) {
+export function AmountInput({
+  value,
+  onChange,
+  balance,
+  symbol,
+  balanceLoading = false,
+}: AmountInputProps) {
   function handleMax() {
-    onChange(balance > 0 ? balance.toString() : "");
+    if (balance > 0) onChange(balance.toString());
   }
 
   function handleChange(e: React.ChangeEvent<HTMLInputElement>) {
     const raw = e.target.value;
-    // Allow only valid positive numeric input
     if (raw === "" || /^\d*\.?\d*$/.test(raw)) {
       onChange(raw);
     }
@@ -22,7 +28,7 @@ export function AmountInput({ value, onChange, balance, symbol }: AmountInputPro
 
   const formattedBalance = new Intl.NumberFormat("en-US", {
     minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
+    maximumFractionDigits: 6,
   }).format(balance);
 
   return (
@@ -41,17 +47,32 @@ export function AmountInput({ value, onChange, balance, symbol }: AmountInputPro
         />
       </div>
 
-      {balance > 0 && (
-        <div className="flex items-center gap-2">
-          <span className="text-sm text-sprout-text-secondary">
-            Balance: ${formattedBalance} {symbol}
+      {/* Balance row — hide only while still loading and balance is 0 */}
+      {!balanceLoading && (
+        <div className="flex items-center gap-2 min-h-[24px]">
+          {balance > 0 ? (
+            <>
+              <span className="text-sm text-sprout-text-secondary">
+                Balance: {formattedBalance} {symbol}
+              </span>
+              <button
+                onClick={handleMax}
+                className="text-xs font-bold text-sprout-green-dark bg-sprout-green-light px-2 py-0.5 rounded-full cursor-pointer"
+              >
+                MAX
+              </button>
+            </>
+          ) : (
+            <span className="text-sm text-sprout-text-muted">No {symbol} balance</span>
+          )}
+        </div>
+      )}
+
+      {balanceLoading && (
+        <div className="min-h-[24px] flex items-center">
+          <span className="text-sm text-sprout-text-muted animate-pulse">
+            Loading balance…
           </span>
-          <button
-            onClick={handleMax}
-            className="text-xs font-bold text-sprout-green-dark bg-sprout-green-light px-2 py-0.5 rounded-full cursor-pointer"
-          >
-            MAX
-          </button>
         </div>
       )}
     </div>
