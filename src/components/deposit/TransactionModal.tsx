@@ -136,7 +136,7 @@ export function TransactionModal({
                 Your money is growing! 🌱
               </h2>
 
-              {explorerUrl && txHash && (
+              {explorerUrl && (
                 <a
                   href={explorerUrl}
                   target="_blank"
@@ -144,9 +144,6 @@ export function TransactionModal({
                   className="text-sm text-green-700 font-medium underline underline-offset-2 mt-3 mb-1 inline-flex items-center gap-1 hover:text-green-900 transition-colors"
                 >
                   View on explorer&nbsp;↗
-                  <span className="font-mono text-xs text-gray-400 ml-1">
-                    ({truncateTxHash(txHash)})
-                  </span>
                 </a>
               )}
 
