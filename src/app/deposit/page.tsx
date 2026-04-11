@@ -235,7 +235,8 @@ function DepositPageContent() {
             selected={tokenSelection}
             vaultChainId={vault?.chainId ?? 8453}
             onChange={setTokenSelection}
-            walletAddress={walletAddress || undefined}
+            balances={walletBalances}
+            balancesLoading={balancesLoading}
           />
         </Card>
 

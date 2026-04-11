@@ -4,7 +4,7 @@ import { useState, useEffect, useRef, useMemo } from "react";
 import { ChevronDown, ChevronRight } from "lucide-react";
 import { TokenIcon } from "@/components/ui/TokenIcon";
 import { CHAIN_NAMES, TOKEN_ADDRESSES } from "@/lib/constants";
-import { useBalances, type TokenBalance } from "@/lib/hooks/useBalances";
+import type { TokenBalance } from "@/lib/hooks/useBalances";
 
 export { TOKEN_ADDRESSES } from "@/lib/constants";
 export { TOKEN_DECIMALS } from "@/lib/constants";
@@ -18,7 +18,8 @@ interface TokenSelectorProps {
   selected: TokenSelection;
   vaultChainId: number;
   onChange: (selection: TokenSelection) => void;
-  walletAddress?: string;
+  balances: TokenBalance[];
+  balancesLoading: boolean;
 }
 
 interface TokenGroup {
@@ -75,12 +76,12 @@ export function TokenSelector({
   selected,
   vaultChainId,
   onChange,
-  walletAddress,
+  balances,
+  balancesLoading: loading,
 }: TokenSelectorProps) {
   const [open, setOpen] = useState(false);
   const [expandedToken, setExpandedToken] = useState<string | null>(null);
   const dropdownRef = useRef<HTMLDivElement>(null);
-  const { balances, loading } = useBalances(walletAddress);
 
   const groups = useMemo(() => buildGroups(balances), [balances]);
 
