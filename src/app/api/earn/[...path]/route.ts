@@ -1,6 +1,7 @@
 import { NextRequest } from "next/server";
 
 const EARN_API_BASE = "https://earn.li.fi";
+const LIFI_API_KEY = process.env.LIFI_API_KEY;
 
 export async function GET(
   request: NextRequest,
@@ -12,7 +13,12 @@ export async function GET(
 
   const url = `${EARN_API_BASE}/${apiPath}?${searchParams.toString()}`;
 
-  const res = await fetch(url);
+  const headers: Record<string, string> = {};
+  if (LIFI_API_KEY) {
+    headers["x-lifi-api-key"] = LIFI_API_KEY;
+  }
+
+  const res = await fetch(url, { headers });
 
   if (!res.ok) {
     const errorBody = await res.text();
