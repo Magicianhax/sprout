@@ -74,21 +74,23 @@ function DepositPageContent() {
 
   // Resolve vault: pro mode uses URL params, lite mode auto-fetches highest TVL
   useEffect(() => {
-    if (preferences.mode === "pro" && urlVault && urlChainId) {
-      fetchVaults({ chainId: Number(urlChainId), asset: tokenSelection.symbol, sortBy: "tvl", limit: 10 })
+    if (urlVault && urlChainId) {
+      // Specific vault requested — search by chainId only, find by address
+      fetchVaults({ chainId: Number(urlChainId), sortBy: "tvl", limit: 100 })
         .then((res) => {
           const found = res.data.find(
             (v) => v.address.toLowerCase() === urlVault.toLowerCase()
           );
-          setVault(found ?? res.data[0] ?? null);
+          setVault(found ?? null);
         })
         .catch(() => setVault(null));
     } else {
+      // Lite mode: pick highest-TVL vault for the selected token
       fetchVaults({ asset: tokenSelection.symbol, sortBy: "tvl", limit: 1 })
         .then((res) => setVault(res.data[0] ?? null))
         .catch(() => setVault(null));
     }
-  }, [tokenSelection.symbol, preferences.mode, urlVault, urlChainId]);
+  }, [tokenSelection.symbol, urlVault, urlChainId]);
 
   // When vault resolves, default fromChain to vault's chain if token is available there
   useEffect(() => {
