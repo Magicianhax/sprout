@@ -372,16 +372,27 @@ function VaultDetailLoader() {
       setLoading(true);
       setError(null);
       try {
-        const response = await fetchVaults(
-          chainId ? { chainId } : undefined
-        );
-        if (cancelled) return;
+        // Paginate through results to find the specific vault
+        let found: Vault | undefined;
+        let cursor: string | undefined;
 
-        const found = response.data.find(
-          (v) =>
-            v.address.toLowerCase() === vaultAddress.toLowerCase() &&
-            (!chainId || v.chainId === chainId)
-        );
+        for (let page = 0; page < 10 && !found; page++) {
+          const response = await fetchVaults({
+            ...(chainId ? { chainId } : {}),
+            limit: 100,
+            cursor,
+          });
+          if (cancelled) return;
+
+          found = response.data.find(
+            (v) =>
+              v.address.toLowerCase() === vaultAddress.toLowerCase() &&
+              (!chainId || v.chainId === chainId)
+          );
+
+          cursor = response.nextCursor;
+          if (!cursor) break;
+        }
 
         if (!found) {
           setError("Vault not found.");
