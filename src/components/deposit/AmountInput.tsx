@@ -33,16 +33,16 @@ export function AmountInput({
 
   return (
     <div className="flex flex-col items-center gap-3">
-      <div className="flex items-baseline justify-center gap-1 w-full py-3">
-        <span className="text-3xl font-bold text-sprout-text-secondary select-none">$</span>
+      <div className="w-full py-3 text-center">
+        <span className="text-3xl font-bold text-sprout-text-secondary select-none align-baseline">$</span>
         <input
           type="text"
           inputMode="decimal"
           value={value}
           onChange={handleChange}
           placeholder="0.00"
-          className="text-4xl font-bold text-sprout-text-primary bg-transparent outline-none placeholder:text-sprout-text-muted w-auto max-w-[200px]"
-          style={{ width: `${Math.max((value || "0.00").length, 4) * 1.3}ch` }}
+          className="text-4xl font-bold text-sprout-text-primary bg-transparent outline-none placeholder:text-sprout-text-muted text-center inline-block"
+          style={{ width: `${Math.max((value || "0.00").length, 4)}ch` }}
         />
       </div>
 
