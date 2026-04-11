@@ -7,7 +7,7 @@ import { ArrowLeft } from "lucide-react";
 import { AuthGuard } from "@/components/layout/AuthGuard";
 import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
-import { TokenSelector } from "@/components/deposit/TokenSelector";
+import { TokenSelector, TOKEN_ADDRESSES, TOKEN_DECIMALS, type TokenSelection } from "@/components/deposit/TokenSelector";
 import { AmountInput } from "@/components/deposit/AmountInput";
 import { DepositPreview } from "@/components/deposit/DepositPreview";
 import { usePreferences } from "@/lib/hooks/usePreferences";
@@ -19,18 +19,14 @@ import type { ComposerQuote, Vault } from "@/lib/types";
 
 type DepositStatus = "idle" | "quoting" | "confirming" | "success" | "error";
 
-const TOKEN_DECIMALS: Record<string, number> = {
-  USDC: 6,
-  USDT: 6,
-  ETH: 18,
-  WBTC: 8,
-  DAI: 18,
-};
-
-// Real balance will come from positions or we show 0 and let user enter amount
-
 function isValidToken(symbol: string): boolean {
   return SUPPORTED_TOKENS.some((t) => t.symbol === symbol);
+}
+
+function getDefaultChainForToken(symbol: string, preferredChainId: number): number {
+  const chains = Object.keys(TOKEN_ADDRESSES[symbol] ?? {}).map(Number);
+  if (chains.includes(preferredChainId)) return preferredChainId;
+  return chains[0] ?? preferredChainId;
 }
 
 function DepositPageContent() {
@@ -43,12 +39,15 @@ function DepositPageContent() {
   const urlVault = searchParams.get("vault");
   const urlChainId = searchParams.get("chainId");
 
-  const initialToken =
+  const initialSymbol =
     urlToken && isValidToken(urlToken)
       ? urlToken
       : preferences.preferredTokens[0] ?? "USDC";
 
-  const [selectedToken, setSelectedToken] = useState<string>(initialToken);
+  const [tokenSelection, setTokenSelection] = useState<TokenSelection>({
+    symbol: initialSymbol,
+    chainId: getDefaultChainForToken(initialSymbol, 8453),
+  });
   const [amount, setAmount] = useState<string>("");
   const [vault, setVault] = useState<Vault | null>(null);
   const [quote, setQuote] = useState<ComposerQuote | null>(null);
@@ -62,8 +61,7 @@ function DepositPageContent() {
   // Resolve vault: pro mode uses URL params, lite mode auto-fetches highest TVL
   useEffect(() => {
     if (preferences.mode === "pro" && urlVault && urlChainId) {
-      // In pro mode the vault was passed via URL — we still need to fetch to get full vault data
-      fetchVaults({ chainId: Number(urlChainId), asset: selectedToken, sortBy: "tvl", limit: 10 })
+      fetchVaults({ chainId: Number(urlChainId), asset: tokenSelection.symbol, sortBy: "tvl", limit: 10 })
         .then((res) => {
           const found = res.data.find(
             (v) => v.address.toLowerCase() === urlVault.toLowerCase()
@@ -72,14 +70,22 @@ function DepositPageContent() {
         })
         .catch(() => setVault(null));
     } else {
-      // Lite mode: pick highest-TVL vault for the selected token
-      fetchVaults({ asset: selectedToken, sortBy: "tvl", limit: 1 })
+      fetchVaults({ asset: tokenSelection.symbol, sortBy: "tvl", limit: 1 })
         .then((res) => setVault(res.data[0] ?? null))
         .catch(() => setVault(null));
     }
-  }, [selectedToken, preferences.mode, urlVault, urlChainId]);
+  }, [tokenSelection.symbol, preferences.mode, urlVault, urlChainId]);
 
-  // Fetch quote whenever amount or vault changes
+  // When vault resolves, default fromChain to vault's chain if token is available there
+  useEffect(() => {
+    if (!vault) return;
+    setTokenSelection((prev) => ({
+      ...prev,
+      chainId: getDefaultChainForToken(prev.symbol, vault.chainId),
+    }));
+  }, [vault]);
+
+  // Fetch quote whenever amount, vault, or token selection changes
   const fetchQuote = useCallback(async () => {
     const numericAmount = parseFloat(amount);
     if (!vault || !walletAddress || isNaN(numericAmount) || numericAmount <= 0) {
@@ -88,21 +94,25 @@ function DepositPageContent() {
       return;
     }
 
-    const decimals = TOKEN_DECIMALS[selectedToken] ?? 18;
+    const decimals = TOKEN_DECIMALS[tokenSelection.symbol] ?? 18;
     const fromAmount = toTokenUnits(numericAmount, decimals);
+    const fromTokenAddress = TOKEN_ADDRESSES[tokenSelection.symbol]?.[tokenSelection.chainId];
+
+    if (!fromTokenAddress) {
+      setQuoteError(`${tokenSelection.symbol} not available on ${CHAIN_NAMES[tokenSelection.chainId] ?? tokenSelection.chainId}`);
+      setQuote(null);
+      return;
+    }
 
     setStatus("quoting");
     setQuoteError("");
 
     try {
-      const underlyingToken = vault.underlyingTokens[0];
-      if (!underlyingToken) throw new Error("Vault has no underlying token");
-
       const result = await getDepositQuote({
-        fromChain: vault.chainId,
+        fromChain: tokenSelection.chainId,
         toChain: vault.chainId,
-        fromToken: underlyingToken.address,  // user's token address
-        toToken: vault.address,              // vault address (NOT underlying token)
+        fromToken: fromTokenAddress,
+        toToken: vault.address,
         fromAmount,
         fromAddress: walletAddress,
       });
@@ -114,7 +124,7 @@ function DepositPageContent() {
       setQuote(null);
       setStatus("idle");
     }
-  }, [amount, vault, walletAddress, selectedToken]);
+  }, [amount, vault, walletAddress, tokenSelection]);
 
   useEffect(() => {
     const timer = setTimeout(() => {
@@ -153,7 +163,9 @@ function DepositPageContent() {
   const networkFeeUsd = quote
     ? parseFloat(quote.estimate.gasCosts[0]?.amountUSD ?? "0")
     : 0;
-  const walletBalance = 0; // Real balance requires on-chain query — user enters amount directly
+  const walletBalance = 0;
+
+  const isCrossChain = vault !== null && tokenSelection.chainId !== vault.chainId;
 
   if (status === "success") {
     return (
@@ -200,8 +212,25 @@ function DepositPageContent() {
           <p className="text-xs font-semibold text-sprout-text-secondary uppercase tracking-wide mb-3">
             Select Token
           </p>
-          <TokenSelector selected={selectedToken} onChange={setSelectedToken} />
+          <TokenSelector
+            selected={tokenSelection}
+            vaultChainId={vault?.chainId ?? 8453}
+            onChange={setTokenSelection}
+          />
         </Card>
+
+        {/* Cross-chain route indicator */}
+        {isCrossChain && vault && (
+          <div className="flex items-center gap-2 px-1">
+            <div className="h-px flex-1 bg-sprout-border" />
+            <span className="text-xs text-sprout-text-muted whitespace-nowrap">
+              {CHAIN_NAMES[tokenSelection.chainId] ?? tokenSelection.chainId}
+              {" → "}
+              {CHAIN_NAMES[vault.chainId] ?? vault.chainId}
+            </span>
+            <div className="h-px flex-1 bg-sprout-border" />
+          </div>
+        )}
 
         {/* Amount input */}
         <Card>
@@ -212,7 +241,7 @@ function DepositPageContent() {
             value={amount}
             onChange={setAmount}
             balance={walletBalance}
-            symbol={selectedToken}
+            symbol={tokenSelection.symbol}
           />
         </Card>
 

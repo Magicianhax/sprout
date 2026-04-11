@@ -41,17 +41,19 @@ export function AmountInput({ value, onChange, balance, symbol }: AmountInputPro
         />
       </div>
 
-      <div className="flex items-center gap-2">
-        <span className="text-sm text-sprout-text-secondary">
-          Balance: ${formattedBalance} {symbol}
-        </span>
-        <button
-          onClick={handleMax}
-          className="text-xs font-bold text-sprout-green-dark bg-sprout-green-light px-2 py-0.5 rounded-full cursor-pointer"
-        >
-          MAX
-        </button>
-      </div>
+      {balance > 0 && (
+        <div className="flex items-center gap-2">
+          <span className="text-sm text-sprout-text-secondary">
+            Balance: ${formattedBalance} {symbol}
+          </span>
+          <button
+            onClick={handleMax}
+            className="text-xs font-bold text-sprout-green-dark bg-sprout-green-light px-2 py-0.5 rounded-full cursor-pointer"
+          >
+            MAX
+          </button>
+        </div>
+      )}
     </div>
   );
 }
