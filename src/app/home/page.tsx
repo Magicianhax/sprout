@@ -25,7 +25,7 @@ import { useVaults } from "@/lib/hooks/useVaults";
 import { useActivity } from "@/lib/hooks/useActivity";
 import { useBalances } from "@/lib/hooks/useBalances";
 import { priceFor, usePrices } from "@/lib/hooks/usePrices";
-import { formatCurrency, getRiskLevel } from "@/lib/format";
+import { getRiskLevel } from "@/lib/format";
 import { CHAIN_NAMES, HOME_PAGE_SIZE } from "@/lib/constants";
 import { displayProtocol } from "@/lib/protocols";
 import type { SortBy, Vault } from "@/lib/types";
@@ -260,19 +260,32 @@ function ProHome() {
     <main className="min-h-dvh bg-sprout-gradient pb-28">
       <Header />
 
-      {/* Compact balance bar */}
-      {totalBalance > 0 && (
-        <div className="mx-5 mt-3 flex items-center gap-3 bg-white rounded-2xl px-4 py-2.5 shadow-subtle">
-          <div className="flex-1 min-w-0">
-            <span className="font-heading text-base font-700 text-sprout-text-primary">
-              {formatCurrency(totalBalance)}
-            </span>
-          </div>
-          <span className="text-xs font-semibold text-sprout-text-secondary shrink-0">
-            {positions.length} position{positions.length !== 1 ? "s" : ""}
-          </span>
+      {/* Greeting */}
+      <div className="px-5 pt-4 pb-3">
+        <p className="font-heading text-2xl font-700 text-sprout-text-primary">
+          {getGreeting()} 👋
+        </p>
+      </div>
+
+      {/* Wallet card — same rich card shown on portfolio */}
+      {address && (
+        <div className="mb-5">
+          <WalletActionBar
+            variant="full"
+            walletAddress={address}
+            hasEarningPositions={positions.length > 0}
+            earningBalanceUsd={totalBalance}
+          />
         </div>
       )}
+
+      {/* Section label for the vault explorer */}
+      <div className="flex items-center gap-2 px-5 mb-3">
+        <span className="w-2 h-2 rounded-full bg-sprout-green-primary" />
+        <h2 className="text-xs font-bold uppercase tracking-wide text-sprout-text-secondary">
+          Explore vaults
+        </h2>
+      </div>
 
       {/* Search bar */}
       <div className="px-5 mt-4 mb-3">
