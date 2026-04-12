@@ -1,6 +1,7 @@
 "use client";
 
-import { useRouter } from "next/navigation";
+import { useRef } from "react";
+import { useAnimatedVisibility } from "@/lib/hooks/useAnimatedVisibility";
 
 const EXPLORER_TX_URLS: Record<number, string> = {
   1: "https://etherscan.io/tx/",
@@ -49,7 +50,16 @@ export function TransactionModal({
   onClose,
   onRetry,
 }: TransactionModalProps) {
-  if (!status) return null;
+  // Keep the last non-null status around so the exit animation doesn't
+  // flash an empty card when the parent sets status back to null.
+  const lastStatusRef = useRef<Exclude<TransactionModalProps["status"], null>>(
+    "confirming"
+  );
+  if (status) lastStatusRef.current = status;
+  const displayStatus = status ?? lastStatusRef.current;
+
+  const { shouldRender, exiting } = useAnimatedVisibility(status !== null);
+  if (!shouldRender) return null;
   const copy = COPY[intent];
 
   const explorerBase = chainId ? (EXPLORER_TX_URLS[chainId] ?? null) : null;
@@ -72,14 +82,6 @@ export function TransactionModal({
           0%, 80%, 100% { opacity: 0.2; transform: scale(0.8); }
           40% { opacity: 1; transform: scale(1); }
         }
-        @keyframes backdrop-fade-in {
-          from { opacity: 0; }
-          to { opacity: 1; }
-        }
-        @keyframes modal-slide-up {
-          from { opacity: 0; transform: translateY(24px); }
-          to { opacity: 1; transform: translateY(0); }
-        }
         .sprout-breathe {
           animation: sprout-breathe 2s ease-in-out infinite;
           display: inline-block;
@@ -90,25 +92,25 @@ export function TransactionModal({
         .dot-1 { animation: dot-pulse 1.4s ease-in-out infinite; animation-delay: 0s; }
         .dot-2 { animation: dot-pulse 1.4s ease-in-out infinite; animation-delay: 0.22s; }
         .dot-3 { animation: dot-pulse 1.4s ease-in-out infinite; animation-delay: 0.44s; }
-        .backdrop-fade-in {
-          animation: backdrop-fade-in 0.25s ease-out both;
-        }
-        .modal-slide-up {
-          animation: modal-slide-up 0.32s ease-out both;
-        }
       `}</style>
 
       {/* Backdrop */}
       <div
-        className="fixed inset-0 z-50 flex items-center justify-center px-5 bg-black/40 backdrop-blur-sm backdrop-fade-in"
+        className={`fixed inset-0 z-[60] flex items-center justify-center px-5 bg-black/40 backdrop-blur-sm ${
+          exiting ? "sprout-backdrop-exit" : "sprout-backdrop-enter"
+        }`}
         aria-modal="true"
         role="dialog"
       >
         {/* Modal card */}
-        <div className="bg-white rounded-3xl shadow-2xl w-full max-w-[340px] min-h-[380px] px-7 py-9 flex flex-col items-center justify-center text-center modal-slide-up">
+        <div
+          className={`bg-white rounded-3xl shadow-2xl w-full max-w-[340px] min-h-[380px] px-7 py-9 flex flex-col items-center justify-center text-center ${
+            exiting ? "sprout-card-exit" : "sprout-card-enter"
+          }`}
+        >
 
           {/* ── CONFIRMING ─────────────────────────────────── */}
-          {status === "confirming" && (
+          {displayStatus === "confirming" && (
             <>
               {/* Sprout icon — breathing animation */}
               <div className="w-20 h-20 rounded-full bg-green-50 flex items-center justify-center mb-6">
@@ -139,7 +141,7 @@ export function TransactionModal({
           )}
 
           {/* ── SUCCESS ────────────────────────────────────── */}
-          {status === "success" && (
+          {displayStatus === "success" && (
             <>
               {/* Bounce-in check */}
               <div className="w-20 h-20 rounded-full bg-green-100 flex items-center justify-center mb-6">
@@ -184,7 +186,7 @@ export function TransactionModal({
           )}
 
           {/* ── ERROR ──────────────────────────────────────── */}
-          {status === "error" && (
+          {displayStatus === "error" && (
             <>
               {/* Red X icon */}
               <div className="w-20 h-20 rounded-full bg-red-50 flex items-center justify-center mb-6">

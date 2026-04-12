@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { QRCodeSVG } from "qrcode.react";
 import { Check, Copy, X } from "lucide-react";
+import { useAnimatedVisibility } from "@/lib/hooks/useAnimatedVisibility";
 
 interface ReceiveModalProps {
   open: boolean;
@@ -12,8 +13,9 @@ interface ReceiveModalProps {
 
 export function ReceiveModal({ open, walletAddress, onClose }: ReceiveModalProps) {
   const [copied, setCopied] = useState(false);
+  const { shouldRender, exiting } = useAnimatedVisibility(open);
 
-  if (!open) return null;
+  if (!shouldRender) return null;
 
   async function handleCopy() {
     if (!walletAddress) return;
@@ -27,27 +29,20 @@ export function ReceiveModal({ open, walletAddress, onClose }: ReceiveModalProps
   }
 
   return (
-    <>
-      <style>{`
-        @keyframes receive-fade-in { from { opacity: 0; } to { opacity: 1; } }
-        @keyframes receive-slide-up {
-          from { opacity: 0; transform: translateY(24px); }
-          to { opacity: 1; transform: translateY(0); }
-        }
-        .receive-backdrop { animation: receive-fade-in 0.22s ease-out both; }
-        .receive-card { animation: receive-slide-up 0.3s ease-out both; }
-      `}</style>
-
+    <div
+      className={`fixed inset-0 z-[60] flex items-center justify-center px-5 bg-black/50 backdrop-blur-sm ${
+        exiting ? "sprout-backdrop-exit" : "sprout-backdrop-enter"
+      }`}
+      aria-modal="true"
+      role="dialog"
+      onClick={onClose}
+    >
       <div
-        className="fixed inset-0 z-50 flex items-center justify-center px-5 bg-black/50 backdrop-blur-sm receive-backdrop"
-        aria-modal="true"
-        role="dialog"
-        onClick={onClose}
+        className={`bg-sprout-card rounded-3xl shadow-2xl w-full max-w-[380px] p-7 relative ${
+          exiting ? "sprout-card-exit" : "sprout-card-enter"
+        }`}
+        onClick={(e) => e.stopPropagation()}
       >
-        <div
-          className="bg-sprout-card rounded-3xl shadow-2xl w-full max-w-[380px] p-7 receive-card relative"
-          onClick={(e) => e.stopPropagation()}
-        >
           <button
             onClick={onClose}
             className="absolute right-4 top-4 p-1 rounded-full text-sprout-text-muted hover:text-sprout-text-primary transition-colors cursor-pointer"
@@ -113,6 +108,5 @@ export function ReceiveModal({ open, walletAddress, onClose }: ReceiveModalProps
           </p>
         </div>
       </div>
-    </>
   );
 }

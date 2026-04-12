@@ -1,6 +1,7 @@
 "use client";
 
 import { X } from "lucide-react";
+import { useAnimatedVisibility } from "@/lib/hooks/useAnimatedVisibility";
 
 interface AboutModalProps {
   open: boolean;
@@ -8,30 +9,24 @@ interface AboutModalProps {
 }
 
 export function AboutModal({ open, onClose }: AboutModalProps) {
-  if (!open) return null;
+  const { shouldRender, exiting } = useAnimatedVisibility(open);
+  if (!shouldRender) return null;
 
   return (
-    <>
-      <style>{`
-        @keyframes about-fade-in { from { opacity: 0; } to { opacity: 1; } }
-        @keyframes about-slide-up {
-          from { opacity: 0; transform: translateY(20px); }
-          to { opacity: 1; transform: translateY(0); }
-        }
-        .about-backdrop { animation: about-fade-in 0.22s ease-out both; }
-        .about-card { animation: about-slide-up 0.28s ease-out both; }
-      `}</style>
-
+    <div
+      className={`fixed inset-0 z-[60] flex items-center justify-center px-5 bg-black/50 backdrop-blur-sm ${
+        exiting ? "sprout-backdrop-exit" : "sprout-backdrop-enter"
+      }`}
+      aria-modal="true"
+      role="dialog"
+      onClick={onClose}
+    >
       <div
-        className="fixed inset-0 z-50 flex items-center justify-center px-5 bg-black/50 backdrop-blur-sm about-backdrop"
-        aria-modal="true"
-        role="dialog"
-        onClick={onClose}
+        className={`bg-sprout-card rounded-3xl shadow-2xl w-full max-w-[380px] p-7 relative ${
+          exiting ? "sprout-card-exit" : "sprout-card-enter"
+        }`}
+        onClick={(e) => e.stopPropagation()}
       >
-        <div
-          className="bg-sprout-card rounded-3xl shadow-2xl w-full max-w-[380px] p-7 about-card relative"
-          onClick={(e) => e.stopPropagation()}
-        >
           <button
             onClick={onClose}
             className="absolute right-4 top-4 p-1 rounded-full text-sprout-text-muted hover:text-sprout-text-primary transition-colors cursor-pointer"
@@ -102,6 +97,5 @@ export function AboutModal({ open, onClose }: AboutModalProps) {
           </button>
         </div>
       </div>
-    </>
   );
 }
