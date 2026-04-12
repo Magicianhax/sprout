@@ -78,4 +78,6 @@ export const DEFAULT_PREFERENCES = {
   preferredTokens: ["USDC"],
   experienceLevel: "beginner" as const,
   onboardingComplete: false,
+  notificationsEnabled: false,
+  darkMode: false,
 };

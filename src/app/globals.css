@@ -32,8 +32,43 @@ body {
   color: var(--color-sprout-text-primary);
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+  background-color: var(--color-sprout-card);
 }
 
 .bg-sprout-gradient {
   background: linear-gradient(180deg, #E8F5E9 0%, #FFF8E1 40%, #FFFFFF 100%);
+}
+
+/* Dark mode — activated by `dark` class on <html>. Overrides the sprout
+   color tokens so every component that reads them flips automatically,
+   plus a few targeted gradient + surface fixes. */
+html.dark {
+  --color-sprout-text-primary: #F3F4F6;
+  --color-sprout-text-secondary: #D1D5DB;
+  --color-sprout-text-muted: #9CA3AF;
+  --color-sprout-card: #1F2937;
+  --color-sprout-border: #374151;
+  --color-sprout-green-light: #064E3B;
+  --color-sprout-amber-warm: #3F2E1A;
+}
+
+html.dark body {
+  background-color: #0F172A;
+}
+
+html.dark .bg-sprout-gradient {
+  background: linear-gradient(180deg, #0F172A 0%, #111827 40%, #0B1220 100%);
+}
+
+html.dark .bg-white {
+  background-color: var(--color-sprout-card);
+}
+
+html.dark .border-sprout-border {
+  border-color: var(--color-sprout-border);
+}
+
+html.dark .bg-gray-100,
+html.dark .bg-gray-200 {
+  background-color: #374151;
 }

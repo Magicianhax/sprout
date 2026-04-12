@@ -4,6 +4,8 @@ export interface UserPreferences {
   preferredTokens: string[];
   experienceLevel: "beginner" | "intermediate" | "advanced";
   onboardingComplete: boolean;
+  notificationsEnabled: boolean;
+  darkMode: boolean;
 }
 
 export interface VaultProtocol {

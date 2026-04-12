@@ -8,6 +8,7 @@ import { AuthGuard } from "@/components/layout/AuthGuard";
 import { Header } from "@/components/layout/Header";
 import { BottomNav } from "@/components/layout/BottomNav";
 import { Card } from "@/components/ui/Card";
+import { Toggle } from "@/components/ui/Toggle";
 import { usePreferences } from "@/lib/hooks/usePreferences";
 
 function truncateAddress(address: string): string {
@@ -21,11 +22,57 @@ function SettingsContent() {
   const { preferences, update } = usePreferences();
 
   const [copied, setCopied] = useState(false);
-  const [notificationsEnabled, setNotificationsEnabled] = useState(false);
-  const [darkModeEnabled, setDarkModeEnabled] = useState(false);
+  const [notificationsError, setNotificationsError] = useState<string | null>(null);
 
   const walletAddress = user?.wallet?.address ?? "";
   const email = user?.email?.address ?? "";
+
+  const notificationsEnabled = preferences.notificationsEnabled;
+  const darkModeEnabled = preferences.darkMode;
+
+  async function handleNotificationsToggle(next: boolean) {
+    setNotificationsError(null);
+
+    if (!next) {
+      update({ notificationsEnabled: false });
+      return;
+    }
+
+    if (typeof window === "undefined" || !("Notification" in window)) {
+      setNotificationsError("Notifications aren't supported in this browser.");
+      return;
+    }
+
+    try {
+      const permission =
+        Notification.permission === "default"
+          ? await Notification.requestPermission()
+          : Notification.permission;
+
+      if (permission !== "granted") {
+        setNotificationsError(
+          permission === "denied"
+            ? "Permission denied — enable notifications in your browser settings."
+            : "Notification permission was not granted."
+        );
+        return;
+      }
+
+      update({ notificationsEnabled: true });
+      new Notification("Sprout notifications enabled", {
+        body: "We'll ping you when your yield hits new milestones.",
+        icon: "/icon-192.png",
+      });
+    } catch (err) {
+      setNotificationsError(
+        err instanceof Error ? err.message : "Couldn't enable notifications."
+      );
+    }
+  }
+
+  function handleDarkModeToggle(next: boolean) {
+    update({ darkMode: next });
+  }
 
   const handleCopyAddress = async () => {
     if (!walletAddress) return;
@@ -133,8 +180,8 @@ function SettingsContent() {
 
         {/* Notifications toggle */}
         <Card shadow="subtle">
-          <div className="flex items-center justify-between">
-            <div>
+          <div className="flex items-center justify-between gap-3">
+            <div className="min-w-0">
               <p className="text-sm font-semibold text-sprout-text-primary">
                 Push Notifications
               </p>
@@ -142,26 +189,21 @@ function SettingsContent() {
                 Get alerts on earnings milestones
               </p>
             </div>
-            <button
-              onClick={() => setNotificationsEnabled((v) => !v)}
-              className={`relative w-12 h-7 rounded-full transition-colors cursor-pointer ${
-                notificationsEnabled ? "bg-sprout-green-primary" : "bg-gray-200"
-              }`}
-              aria-label="Toggle notifications"
-            >
-              <span
-                className={`absolute top-1 w-5 h-5 bg-white rounded-full shadow transition-transform ${
-                  notificationsEnabled ? "translate-x-6" : "translate-x-1"
-                }`}
-              />
-            </button>
+            <Toggle
+              checked={notificationsEnabled}
+              onChange={handleNotificationsToggle}
+              ariaLabel="Toggle push notifications"
+            />
           </div>
+          {notificationsError && (
+            <p className="text-xs text-sprout-red-stop mt-2">{notificationsError}</p>
+          )}
         </Card>
 
         {/* Dark mode toggle */}
         <Card shadow="subtle">
-          <div className="flex items-center justify-between">
-            <div>
+          <div className="flex items-center justify-between gap-3">
+            <div className="min-w-0">
               <p className="text-sm font-semibold text-sprout-text-primary">
                 Dark Mode
               </p>
@@ -169,19 +211,11 @@ function SettingsContent() {
                 Easier on the eyes at night
               </p>
             </div>
-            <button
-              onClick={() => setDarkModeEnabled((v) => !v)}
-              className={`relative w-12 h-7 rounded-full transition-colors cursor-pointer ${
-                darkModeEnabled ? "bg-sprout-green-primary" : "bg-gray-200"
-              }`}
-              aria-label="Toggle dark mode"
-            >
-              <span
-                className={`absolute top-1 w-5 h-5 bg-white rounded-full shadow transition-transform ${
-                  darkModeEnabled ? "translate-x-6" : "translate-x-1"
-                }`}
-              />
-            </button>
+            <Toggle
+              checked={darkModeEnabled}
+              onChange={handleDarkModeToggle}
+              ariaLabel="Toggle dark mode"
+            />
           </div>
         </Card>
 

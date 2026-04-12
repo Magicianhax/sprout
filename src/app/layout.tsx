@@ -1,5 +1,6 @@
 import type { Metadata, Viewport } from "next";
 import { PrivyProvider } from "@/components/providers/PrivyProvider";
+import { ThemeSync } from "@/components/providers/ThemeSync";
 import "./globals.css";
 
 export const metadata: Metadata = {
@@ -19,7 +20,10 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
   return (
     <html lang="en">
       <body className="font-body bg-sprout-gradient min-h-dvh">
-        <PrivyProvider>{children}</PrivyProvider>
+        <PrivyProvider>
+          <ThemeSync />
+          {children}
+        </PrivyProvider>
       </body>
     </html>
   );
