@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import type { Vault, SortBy } from "@/lib/types";
-import { fetchAllVaults } from "@/lib/api/earn";
+import { fetchVaultsStreaming } from "@/lib/api/earn";
 import { parseTvl, getRiskLevel } from "@/lib/format";
 
 interface UseVaultsOptions {
@@ -12,78 +12,97 @@ interface UseVaultsOptions {
   token?: string;
 }
 
-// Module-level cache keyed by fetch scope (asset token only — chain/sort/risk
-// are all applied client-side so they must NOT be part of the key, otherwise
-// toggling them re-hits the network).
-const cache = new Map<string, Vault[]>();
-const inflight = new Map<string, Promise<Vault[]>>();
+// Shared stream state keyed by fetch scope (asset token only — chain,
+// sort, and risk are client-side so they don't belong in the key).
+// Components subscribe via useVaults() and see cumulative updates as
+// each API page lands.
+interface StreamState {
+  vaults: Vault[];
+  done: boolean;
+  error: Error | null;
+}
 
-function cacheKey(token?: string): string {
+const EMPTY_STATE: StreamState = { vaults: [], done: false, error: null };
+
+const streams = new Map<string, StreamState>();
+const inflight = new Map<string, Promise<Vault[]>>();
+const subscribers = new Map<string, Set<(s: StreamState) => void>>();
+
+function keyOf(token?: string): string {
   return token ?? "__all__";
 }
 
-async function loadVaults(token?: string): Promise<Vault[]> {
-  const key = cacheKey(token);
-  const cached = cache.get(key);
-  if (cached) return cached;
+function setState(key: string, state: StreamState) {
+  streams.set(key, state);
+  const subs = subscribers.get(key);
+  if (!subs) return;
+  for (const cb of subs) cb(state);
+}
 
-  const existing = inflight.get(key);
-  if (existing) return existing;
+function startStream(token: string | undefined) {
+  const key = keyOf(token);
+  const existing = streams.get(key);
+  if (existing?.done && !existing.error) return;
+  if (inflight.has(key)) return;
 
-  const promise = fetchAllVaults({
-    pageSize: 50,
-    maxPages: 10,
-    asset: token,
-  })
-    .then((res) => {
-      // Don't cache empty results — they're almost certainly a transient
-      // upstream hiccup and we'd rather retry than get stuck on [].
-      if (res.data.length > 0) cache.set(key, res.data);
+  setState(key, { vaults: existing?.vaults ?? [], done: false, error: null });
+
+  const promise = fetchVaultsStreaming(
+    { pageSize: 100, maxPages: 10, asset: token },
+    (cumulative) => {
+      setState(key, { vaults: cumulative, done: false, error: null });
+    }
+  )
+    .then((final) => {
+      setState(key, { vaults: final, done: true, error: null });
       inflight.delete(key);
-      return res.data;
+      return final;
     })
     .catch((err) => {
+      const error = err instanceof Error ? err : new Error(String(err));
+      setState(key, {
+        vaults: streams.get(key)?.vaults ?? [],
+        done: true,
+        error,
+      });
       inflight.delete(key);
-      throw err;
+      throw error;
     });
 
   inflight.set(key, promise);
-  return promise;
+}
+
+function subscribe(token: string | undefined, cb: (s: StreamState) => void): () => void {
+  const key = keyOf(token);
+  let subs = subscribers.get(key);
+  if (!subs) {
+    subs = new Set();
+    subscribers.set(key, subs);
+  }
+  subs.add(cb);
+  return () => {
+    subs!.delete(cb);
+  };
 }
 
 export function useVaults(options: UseVaultsOptions = {}) {
   const { chainIds, sortBy = "tvl", riskLevel, token } = options;
 
-  const [allVaults, setAllVaults] = useState<Vault[]>(
-    () => cache.get(cacheKey(token)) ?? []
-  );
-  const [loading, setLoading] = useState(() => !cache.has(cacheKey(token)));
-  const [error, setError] = useState<string | null>(null);
-
-  const load = useCallback(
-    async (force = false) => {
-      if (force) cache.delete(cacheKey(token));
-      setLoading(!cache.has(cacheKey(token)));
-      setError(null);
-      try {
-        const data = await loadVaults(token);
-        setAllVaults(data);
-      } catch (err) {
-        setError(err instanceof Error ? err.message : "Couldn't load opportunities");
-      } finally {
-        setLoading(false);
-      }
-    },
-    [token]
+  const [state, setLocalState] = useState<StreamState>(
+    () => streams.get(keyOf(token)) ?? EMPTY_STATE
   );
 
   useEffect(() => {
-    load();
-  }, [load]);
+    // Sync to the latest value on mount in case another instance
+    // already advanced the stream.
+    setLocalState(streams.get(keyOf(token)) ?? EMPTY_STATE);
+    const unsub = subscribe(token, setLocalState);
+    startStream(token);
+    return unsub;
+  }, [token]);
 
-  // Derive filtered + sorted view from cached data — no network calls.
   const vaults = useMemo(() => {
-    let result = allVaults;
+    let result = state.vaults;
 
     if (chainIds && chainIds.length > 0) {
       const set = new Set(chainIds);
@@ -103,7 +122,19 @@ export function useVaults(options: UseVaultsOptions = {}) {
       );
     }
     return sorted;
-  }, [allVaults, chainIds, riskLevel, sortBy]);
+  }, [state.vaults, chainIds, riskLevel, sortBy]);
 
-  return { vaults, loading, error, reload: () => load(true) };
+  const loading = state.vaults.length === 0 && !state.done && !state.error;
+  const loadingMore = state.vaults.length > 0 && !state.done && !state.error;
+  const error = state.error?.message ?? null;
+
+  const reload = useCallback(() => {
+    const key = keyOf(token);
+    streams.delete(key);
+    inflight.delete(key);
+    setLocalState(EMPTY_STATE);
+    startStream(token);
+  }, [token]);
+
+  return { vaults, loading, loadingMore, error, reload };
 }

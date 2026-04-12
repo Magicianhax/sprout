@@ -136,7 +136,7 @@ function ProHome() {
   const [assetFilter, setAssetFilter] = useState<string>("all");
   const [searchQuery, setSearchQuery] = useState<string>("");
 
-  const { vaults, loading, error, reload } = useVaults({
+  const { vaults, loading, loadingMore, error, reload } = useVaults({
     chainIds: selectedChains.length > 0 ? selectedChains : undefined,
     sortBy,
   });
@@ -299,6 +299,13 @@ function ProHome() {
               />
             ))}
           </div>
+
+          {loadingMore && (
+            <div className="flex items-center justify-center gap-2 mt-4 px-5 text-xs text-sprout-text-muted">
+              <span className="w-3 h-3 rounded-full border-2 border-sprout-green-primary border-t-transparent animate-spin" />
+              Loading more opportunities…
+            </div>
+          )}
 
           {totalPages > 1 && (
             <div className="flex items-center justify-center gap-3 px-5 mt-5">

@@ -1,5 +1,5 @@
 import { SUPPORTED_CHAIN_IDS } from "@/lib/constants";
-import type { VaultsResponse, Chain, PositionsResponse } from "@/lib/types";
+import type { Vault, VaultsResponse, Chain, PositionsResponse } from "@/lib/types";
 
 // Earn API doesn't support CORS — all calls proxied through /api/earn/
 const API_BASE = "/api/earn";
@@ -41,36 +41,38 @@ export async function fetchVaults(params?: {
   return data;
 }
 
-// Fetch ALL pages of vaults by following nextCursor until exhausted.
-// Capped at `maxPages` to protect against runaway loops.
-export async function fetchAllVaults(params?: {
-  chainId?: number;
-  asset?: string;
-  sortBy?: "tvl" | "apy";
-  pageSize?: number;
-  maxPages?: number;
-}): Promise<VaultsResponse> {
-  const pageSize = params?.pageSize ?? 50;
-  const maxPages = params?.maxPages ?? 10;
+// Stream pages of vaults as they arrive. `onPage` is called after each
+// page with the cumulative (deduped, chain-filtered) list so callers
+// can render progressively without waiting for every page.
+export async function fetchVaultsStreaming(
+  params: {
+    chainId?: number;
+    asset?: string;
+    sortBy?: "tvl" | "apy";
+    pageSize?: number;
+    maxPages?: number;
+  },
+  onPage: (cumulative: Vault[]) => void
+): Promise<Vault[]> {
+  const pageSize = params.pageSize ?? 100;
+  const maxPages = params.maxPages ?? 10;
 
-  const combined: VaultsResponse = { data: [], nextCursor: undefined, total: 0 };
   const seen = new Set<string>();
+  const cumulative: Vault[] = [];
   let cursor: string | undefined;
 
   for (let page = 0; page < maxPages; page++) {
-    // Use raw fetcher so the SUPPORTED_CHAIN_IDS filter doesn't zero-out
-    // a page and trigger an early break while nextCursor is still valid.
     const res = await fetchVaultsRaw({
-      chainId: params?.chainId,
-      asset: params?.asset,
-      sortBy: params?.sortBy,
+      chainId: params.chainId,
+      asset: params.asset,
+      sortBy: params.sortBy,
       limit: pageSize,
       cursor,
     });
 
     for (const v of res.data) {
       if (
-        !params?.chainId &&
+        !params.chainId &&
         !SUPPORTED_CHAIN_IDS.includes(v.chainId as typeof SUPPORTED_CHAIN_IDS[number])
       ) {
         continue;
@@ -78,15 +80,30 @@ export async function fetchAllVaults(params?: {
       const key = `${v.chainId}-${v.address}`;
       if (seen.has(key)) continue;
       seen.add(key);
-      combined.data.push(v);
+      cumulative.push(v);
     }
+
+    // Emit a fresh array snapshot so React consumers see the change
+    onPage([...cumulative]);
 
     if (!res.nextCursor) break;
     cursor = res.nextCursor;
   }
 
-  combined.total = combined.data.length;
-  return combined;
+  return cumulative;
+}
+
+// Non-streaming convenience wrapper — resolves once every page is in.
+// Shares the exact same pagination path as the streaming variant.
+export async function fetchAllVaults(params?: {
+  chainId?: number;
+  asset?: string;
+  sortBy?: "tvl" | "apy";
+  pageSize?: number;
+  maxPages?: number;
+}): Promise<VaultsResponse> {
+  const data = await fetchVaultsStreaming(params ?? {}, () => {});
+  return { data, nextCursor: undefined, total: data.length };
 }
 
 export async function fetchChains(): Promise<Chain[]> {
