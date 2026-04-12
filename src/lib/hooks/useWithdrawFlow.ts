@@ -1,15 +1,21 @@
 "use client";
 
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useWallets } from "@privy-io/react-auth";
 import { getWithdrawQuote } from "@/lib/api/composer";
 import { fetchVaults } from "@/lib/api/earn";
 import { toTokenUnits } from "@/lib/format";
+import {
+  POSITION_RESYNC_DELAYS_MS,
+  VAULT_MAX_PAGES,
+  VAULT_PAGE_SIZE,
+} from "@/lib/constants";
 import { useVaults } from "@/lib/hooks/useVaults";
 import {
   invalidatePositions,
   optimisticallyRemovePosition,
 } from "@/lib/hooks/usePositions";
+import { invalidateActivity } from "@/lib/hooks/useActivity";
 import type { ComposerQuote, Position, Vault } from "@/lib/types";
 
 // Protocols whose vault address is an ERC4626 share token. For these
@@ -79,12 +85,15 @@ function markWithdrawn(position: Position, walletAddress: string) {
     position.protocolName
   );
   // Background re-sync — fire and forget. Each attempt overwrites the
-  // cache with whatever the indexer returns.
-  const delays = [4000, 12000, 30000];
-  for (const ms of delays) {
+  // cache with whatever the indexer returns. The activity feed is also
+  // invalidated so any LI.FI-mediated history entries refresh.
+  for (const ms of POSITION_RESYNC_DELAYS_MS) {
     setTimeout(() => {
-      invalidatePositions(walletAddress).catch(() => {
-        /* swallow — the optimistic state is already correct */
+      invalidatePositions(walletAddress).catch((err) => {
+        console.warn("[withdraw] background position resync failed", err);
+      });
+      invalidateActivity(walletAddress).catch(() => {
+        /* non-critical */
       });
     }, ms);
   }
@@ -112,10 +121,33 @@ export function useWithdrawFlow() {
 
   const [state, setState] = useState<FlowState>(INITIAL);
   const inFlightRef = useRef(false);
+  // Tracks whether the consumer has unmounted or closed the modal so
+  // late-arriving promise resolutions don't write into stale state.
+  const closedRef = useRef(false);
+
+  useEffect(() => {
+    closedRef.current = false;
+    return () => {
+      closedRef.current = true;
+    };
+  }, []);
+
+  const safeSetState = useCallback(
+    (updater: FlowState | ((s: FlowState) => FlowState)) => {
+      if (closedRef.current) return;
+      setState(updater);
+    },
+    []
+  );
 
   const close = useCallback(() => {
     inFlightRef.current = false;
+    closedRef.current = true;
     setState(INITIAL);
+    // Allow a fresh run after re-open from the same hook instance.
+    queueMicrotask(() => {
+      closedRef.current = false;
+    });
   }, []);
 
   const resolveVault = useCallback(
@@ -126,10 +158,10 @@ export function useWithdrawFlow() {
       // Fallback — the vault cache hasn't reached this protocol/chain
       // yet. Paginate the earn API directly until we find a match.
       let cursor: string | undefined;
-      for (let page = 0; page < 10; page++) {
+      for (let page = 0; page < VAULT_MAX_PAGES; page++) {
         const res = await fetchVaults({
           chainId: position.chainId,
-          limit: 100,
+          limit: VAULT_PAGE_SIZE,
           cursor,
         });
         const hit = res.data.find((v) => matchVault(position, v));
@@ -147,8 +179,9 @@ export function useWithdrawFlow() {
     async (position: Position) => {
       if (inFlightRef.current) return;
       inFlightRef.current = true;
+      closedRef.current = false;
 
-      setState({
+      safeSetState({
         phase: "quoting",
         position,
         quote: null,
@@ -158,7 +191,7 @@ export function useWithdrawFlow() {
 
       try {
         const numeric = parseFloat(position.balanceNative);
-        if (!(numeric > 0)) {
+        if (!Number.isFinite(numeric) || numeric <= 0) {
           throw new Error("Nothing to withdraw — your balance is zero.");
         }
 
@@ -169,6 +202,13 @@ export function useWithdrawFlow() {
 
         const vault = await resolveVault(position);
 
+        // Defense in depth: matchVault already checks chainId, but if
+        // a future code path bypasses it we don't want to send to a
+        // contract on the wrong chain.
+        if (vault.chainId !== position.chainId) {
+          throw new Error("Vault chain mismatch — refusing to send transaction.");
+        }
+
         // ERC4626 direct redeem path — works for Morpho, Euler V2, and
         // any modern vault that exposes the standard redeem(shares,
         // receiver, owner) interface. Composer's /v1/quote doesn't
@@ -177,6 +217,14 @@ export function useWithdrawFlow() {
         if (ERC4626_PROTOCOLS.has(position.protocolName)) {
           await wallet.switchChain(position.chainId);
           const provider = await wallet.getEthereumProvider();
+
+          // Confirm we're actually on the requested chain after the
+          // switch — Privy can silently leave us on the previous one
+          // if the user dismisses the wallet prompt.
+          const chainHex = (await provider.request({ method: "eth_chainId" })) as string;
+          if (parseInt(chainHex, 16) !== position.chainId) {
+            throw new Error("Wallet is on the wrong chain. Please switch networks.");
+          }
 
           const balanceHex = (await provider.request({
             method: "eth_call",
@@ -191,7 +239,7 @@ export function useWithdrawFlow() {
             throw new Error("No shares to redeem — position already empty.");
           }
 
-          setState((s) => ({ ...s, phase: "confirming" }));
+          safeSetState((s) => ({ ...s, phase: "confirming" }));
 
           const data = encodeRedeem(shares, wallet.address, wallet.address);
           const hash = (await provider.request({
@@ -206,7 +254,7 @@ export function useWithdrawFlow() {
           })) as string;
 
           markWithdrawn(position, wallet.address);
-          setState((s) => ({ ...s, phase: "success", txHash: hash }));
+          safeSetState((s) => ({ ...s, phase: "success", txHash: hash }));
           return;
         }
 
@@ -225,12 +273,22 @@ export function useWithdrawFlow() {
           fromAddress: wallet.address,
         });
 
-        setState((s) => ({ ...s, phase: "confirming", quote }));
+        // Reject quotes that target a different chain than expected.
+        if (quote.transactionRequest.chainId !== position.chainId) {
+          throw new Error("Quote returned the wrong chain — aborting.");
+        }
+
+        safeSetState((s) => ({ ...s, phase: "confirming", quote }));
 
         const { transactionRequest } = quote;
         await wallet.switchChain(transactionRequest.chainId);
 
         const provider = await wallet.getEthereumProvider();
+        const chainHex = (await provider.request({ method: "eth_chainId" })) as string;
+        if (parseInt(chainHex, 16) !== transactionRequest.chainId) {
+          throw new Error("Wallet is on the wrong chain. Please switch networks.");
+        }
+
         const hash = await provider.request({
           method: "eth_sendTransaction",
           params: [
@@ -247,15 +305,15 @@ export function useWithdrawFlow() {
         });
 
         markWithdrawn(position, wallet.address);
-        setState((s) => ({ ...s, phase: "success", txHash: hash as string }));
+        safeSetState((s) => ({ ...s, phase: "success", txHash: hash as string }));
       } catch (err) {
         const message = err instanceof Error ? err.message : "Withdrawal failed";
-        setState((s) => ({ ...s, phase: "error", errorMessage: message }));
+        safeSetState((s) => ({ ...s, phase: "error", errorMessage: message }));
       } finally {
         inFlightRef.current = false;
       }
     },
-    [wallets, resolveVault]
+    [wallets, resolveVault, safeSetState]
   );
 
   const retry = useCallback(() => {

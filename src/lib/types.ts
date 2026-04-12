@@ -95,3 +95,33 @@ export interface ComposerQuote {
 
 export type RiskLevel = "low" | "medium" | "high";
 export type SortBy = "tvl" | "apy";
+
+// Shape returned by li.quest /v2/analytics/transfers — only the fields
+// we consume are modeled; upstream may include many more.
+export interface TransferSide {
+  txHash: string;
+  txLink?: string;
+  chainId: number;
+  amount: string;
+  amountUSD?: string;
+  timestamp: number;
+  token: {
+    address: string;
+    chainId: number;
+    symbol: string;
+    decimals: number;
+    name?: string;
+    logoURI?: string;
+    priceUSD?: string;
+  };
+}
+
+export interface TransferRecord {
+  transactionId: string;
+  sending: TransferSide;
+  receiving?: TransferSide;
+}
+
+export interface TransferHistoryResponse {
+  data: TransferRecord[];
+}

@@ -9,8 +9,10 @@ import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
 import { TokenSelector, type TokenSelection } from "@/components/deposit/TokenSelector";
 import { TransactionModal } from "@/components/deposit/TransactionModal";
-import { TOKEN_ADDRESSES, TOKEN_DECIMALS } from "@/lib/constants";
+import { QUOTE_DEBOUNCE_MS, TOKEN_ADDRESSES, TOKEN_DECIMALS } from "@/lib/constants";
 import { useBalances } from "@/lib/hooks/useBalances";
+import { invalidatePositions } from "@/lib/hooks/usePositions";
+import { invalidateActivity } from "@/lib/hooks/useActivity";
 import { AmountInput } from "@/components/deposit/AmountInput";
 import { DepositPreview } from "@/components/deposit/DepositPreview";
 import { usePreferences } from "@/lib/hooks/usePreferences";
@@ -154,7 +156,7 @@ function DepositPageContent() {
   useEffect(() => {
     const timer = setTimeout(() => {
       void fetchQuote();
-    }, 600);
+    }, QUOTE_DEBOUNCE_MS);
     return () => clearTimeout(timer);
   }, [fetchQuote]);
 
@@ -194,6 +196,20 @@ function DepositPageContent() {
 
       setTxHash(txHash as string);
       setStatus("success");
+
+      // Kick the shared caches so positions + LI.FI analytics reflect
+      // the new deposit without the user needing to reload.
+      const walletAddress = wallet.address;
+      if (walletAddress) {
+        invalidatePositions(walletAddress).catch(() => {});
+        invalidateActivity(walletAddress).catch(() => {});
+        for (const ms of [4000, 12000, 30000]) {
+          setTimeout(() => {
+            invalidatePositions(walletAddress).catch(() => {});
+            invalidateActivity(walletAddress).catch(() => {});
+          }, ms);
+        }
+      }
     } catch (err) {
       const message = err instanceof Error ? err.message : "Transaction failed";
       setErrorMessage(message);

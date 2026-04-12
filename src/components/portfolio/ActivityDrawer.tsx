@@ -3,15 +3,17 @@
 import { useEffect } from "react";
 import { X } from "lucide-react";
 import { RecentActivity } from "@/components/home/RecentActivity";
-import type { Position } from "@/lib/types";
+import { useActivity } from "@/lib/hooks/useActivity";
 
 interface ActivityDrawerProps {
   open: boolean;
   onClose: () => void;
-  positions: Position[];
+  walletAddress: string | undefined;
 }
 
-export function ActivityDrawer({ open, onClose, positions }: ActivityDrawerProps) {
+export function ActivityDrawer({ open, onClose, walletAddress }: ActivityDrawerProps) {
+  const { records, loading, error } = useActivity(walletAddress);
+
   // Esc to close — matches modal patterns elsewhere
   useEffect(() => {
     if (!open) return;
@@ -66,13 +68,11 @@ export function ActivityDrawer({ open, onClose, positions }: ActivityDrawerProps
           </div>
 
           <div className="flex-1 overflow-y-auto pt-3 pb-6">
-            {positions.length > 0 ? (
-              <RecentActivity positions={positions} />
-            ) : (
-              <div className="mx-5 text-center text-sm text-sprout-text-muted py-10">
-                No activity yet. Your deposits and withdrawals will show up here.
-              </div>
-            )}
+            <RecentActivity records={records} loading={loading} error={error} />
+            <p className="mx-5 mt-4 text-[10px] text-sprout-text-muted leading-relaxed">
+              Shows transfers routed through LI.FI. Direct vault withdrawals
+              appear on the block explorer linked in the withdrawal confirmation.
+            </p>
           </div>
         </aside>
       </div>

@@ -24,6 +24,7 @@ import { PoweredByLifi } from "@/components/ui/PoweredByLifi";
 import { usePreferences } from "@/lib/hooks/usePreferences";
 import { usePositions } from "@/lib/hooks/usePositions";
 import { useVaults } from "@/lib/hooks/useVaults";
+import { useActivity } from "@/lib/hooks/useActivity";
 import { formatCurrency, getRiskLevel } from "@/lib/format";
 import { CHAIN_NAMES, HOME_PAGE_SIZE } from "@/lib/constants";
 import { displayProtocol } from "@/lib/protocols";
@@ -41,6 +42,7 @@ function LiteHome() {
   const router = useRouter();
   const address = user?.wallet?.address;
   const { positions, loading, error, reload, totalBalance } = usePositions(address);
+  const activity = useActivity(address);
 
   const hasPositions = positions.length > 0;
 
@@ -98,7 +100,11 @@ function LiteHome() {
             </button>
           </div>
 
-          <RecentActivity positions={positions} />
+          <RecentActivity
+            records={activity.records}
+            loading={activity.loading}
+            error={activity.error}
+          />
         </div>
       ) : (
         <>

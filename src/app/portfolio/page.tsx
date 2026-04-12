@@ -199,7 +199,7 @@ function PortfolioContent() {
       <ActivityDrawer
         open={activityOpen}
         onClose={() => setActivityOpen(false)}
-        positions={positions}
+        walletAddress={address}
       />
 
       <TransactionModal
