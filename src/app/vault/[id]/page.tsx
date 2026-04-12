@@ -346,6 +346,7 @@ function VaultDetailContent({ vault, chainId }: { vault: Vault; chainId: number 
 
       <TransactionModal
         status={withdraw.modalStatus}
+        intent="withdraw"
         txHash={withdraw.state.txHash}
         chainId={withdraw.state.position?.chainId}
         errorMessage={withdraw.state.errorMessage}

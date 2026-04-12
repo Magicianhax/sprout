@@ -155,6 +155,7 @@ function PortfolioContent() {
 
       <TransactionModal
         status={withdraw.modalStatus}
+        intent="withdraw"
         txHash={withdraw.state.txHash}
         chainId={withdraw.state.position?.chainId}
         errorMessage={withdraw.state.errorMessage}

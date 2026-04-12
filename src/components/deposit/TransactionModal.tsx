@@ -17,6 +17,7 @@ function truncateTxHash(hash: string): string {
 
 export interface TransactionModalProps {
   status: "confirming" | "success" | "error" | null;
+  intent?: "deposit" | "withdraw";
   txHash?: string;
   chainId?: number;
   errorMessage?: string;
@@ -24,8 +25,24 @@ export interface TransactionModalProps {
   onRetry: () => void;
 }
 
+const COPY = {
+  deposit: {
+    confirmingTitle: "Confirming your deposit…",
+    confirmingBody: "Please approve in your wallet",
+    successTitle: "Your money is growing! 🌱",
+    closeLabel: "Back to Home",
+  },
+  withdraw: {
+    confirmingTitle: "Confirming your withdrawal…",
+    confirmingBody: "Please approve in your wallet",
+    successTitle: "Withdrawal complete 🎉",
+    closeLabel: "Back to Portfolio",
+  },
+} as const;
+
 export function TransactionModal({
   status,
+  intent = "deposit",
   txHash,
   chainId,
   errorMessage,
@@ -33,6 +50,7 @@ export function TransactionModal({
   onRetry,
 }: TransactionModalProps) {
   if (!status) return null;
+  const copy = COPY[intent];
 
   const explorerBase = chainId ? (EXPLORER_TX_URLS[chainId] ?? null) : null;
   const explorerUrl = explorerBase && txHash ? `${explorerBase}${txHash}` : null;
@@ -98,10 +116,10 @@ export function TransactionModal({
               </div>
 
               <h2 className="font-heading text-xl font-bold text-sprout-text-primary mb-2">
-                Confirming your deposit…
+                {copy.confirmingTitle}
               </h2>
               <p className="text-sm text-sprout-text-muted mb-6">
-                Please approve in your wallet
+                {copy.confirmingBody}
               </p>
 
               {/* Animated dots */}
@@ -140,7 +158,7 @@ export function TransactionModal({
               </div>
 
               <h2 className="font-heading text-xl font-bold text-sprout-text-primary mb-1">
-                Your money is growing! 🌱
+                {copy.successTitle}
               </h2>
 
               {explorerUrl && (
@@ -158,7 +176,7 @@ export function TransactionModal({
                 onClick={onClose}
                 className="mt-6 w-full rounded-button px-6 py-4 text-base font-bold bg-gradient-to-br from-sprout-green-primary to-[#66BB6A] text-white shadow-glow transition-all duration-150 active:scale-[0.97] cursor-pointer"
               >
-                Back to Home
+                {copy.closeLabel}
               </button>
 
               <p className="mt-5 text-[11px] text-sprout-text-muted">Powered by LI.FI</p>
