@@ -6,6 +6,7 @@ import { usePrivy } from "@privy-io/react-auth";
 import { AuthGuard } from "@/components/layout/AuthGuard";
 import { Header } from "@/components/layout/Header";
 import { BottomNav } from "@/components/layout/BottomNav";
+import { WalletActionBar } from "@/components/portfolio/WalletActionBar";
 import { BalanceCard } from "@/components/home/BalanceCard";
 import { EarningsChart } from "@/components/home/EarningsChart";
 import { EmptyState } from "@/components/home/EmptyState";
@@ -24,7 +25,7 @@ import { usePreferences } from "@/lib/hooks/usePreferences";
 import { usePositions } from "@/lib/hooks/usePositions";
 import { useVaults } from "@/lib/hooks/useVaults";
 import { formatCurrency, getRiskLevel } from "@/lib/format";
-import { CHAIN_NAMES } from "@/lib/constants";
+import { CHAIN_NAMES, HOME_PAGE_SIZE } from "@/lib/constants";
 import { displayProtocol } from "@/lib/protocols";
 import type { SortBy, Vault } from "@/lib/types";
 
@@ -55,6 +56,16 @@ function LiteHome() {
           {getGreeting()} 👋
         </p>
       </div>
+
+      {address && (
+        <div className="pt-1 pb-3">
+          <WalletActionBar
+            variant="compact"
+            walletAddress={address}
+            hasEarningPositions={!loading && hasPositions}
+          />
+        </div>
+      )}
 
       {loading ? (
         <div className="flex flex-col gap-5 pt-2">
@@ -180,9 +191,8 @@ function ProHome() {
     });
   }, [protocolFilteredVaults, searchQuery]);
 
-  const PAGE_SIZE = 10;
   const [page, setPage] = useState(1);
-  const totalPages = Math.max(1, Math.ceil(visibleVaults.length / PAGE_SIZE));
+  const totalPages = Math.max(1, Math.ceil(visibleVaults.length / HOME_PAGE_SIZE));
 
   // Reset to first page when filters/sort/search change
   useEffect(() => {
@@ -195,7 +205,7 @@ function ProHome() {
   }, [page, totalPages]);
 
   const pagedVaults = useMemo(
-    () => visibleVaults.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE),
+    () => visibleVaults.slice((page - 1) * HOME_PAGE_SIZE, page * HOME_PAGE_SIZE),
     [visibleVaults, page]
   );
 
@@ -335,7 +345,13 @@ function ProHome() {
         </>
       )}
 
-      <PoweredByLifi className="pb-5" />
+      {positions.length > 0 && (
+        <div className="mt-8">
+          <RecentActivity positions={positions} />
+        </div>
+      )}
+
+      <PoweredByLifi className="pt-6 pb-5" />
       <BottomNav />
     </main>
   );
