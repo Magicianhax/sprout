@@ -1,6 +1,8 @@
 import type { Metadata, Viewport } from "next";
 import { PrivyProvider } from "@/components/providers/PrivyProvider";
 import { ThemeSync } from "@/components/providers/ThemeSync";
+import { ServiceWorkerRegister } from "@/components/providers/ServiceWorkerRegister";
+import { InstallPrompt } from "@/components/providers/InstallPrompt";
 import "./globals.css";
 
 export const metadata: Metadata = {
@@ -28,6 +30,8 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
       <body className="font-body bg-sprout-gradient min-h-dvh">
         <PrivyProvider>
           <ThemeSync />
+          <ServiceWorkerRegister />
+          <InstallPrompt />
           {children}
         </PrivyProvider>
       </body>

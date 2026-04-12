@@ -1,13 +1,43 @@
 {
-  "name": "Sprout",
+  "name": "Sprout — Your money, growing every day",
   "short_name": "Sprout",
-  "description": "Your money, growing every day.",
-  "start_url": "/",
+  "description": "A savings app that happens to be DeFi. Earn on your crypto as easily as a savings account.",
+  "start_url": "/home",
+  "scope": "/",
   "display": "standalone",
   "background_color": "#E8F5E9",
   "theme_color": "#4CAF50",
   "orientation": "portrait",
+  "lang": "en",
+  "categories": ["finance", "productivity"],
   "icons": [
-    { "src": "/icon.svg", "sizes": "any", "type": "image/svg+xml" }
+    {
+      "src": "/icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    },
+    {
+      "src": "/icon-maskable.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "maskable"
+    }
+  ],
+  "shortcuts": [
+    {
+      "name": "Portfolio",
+      "short_name": "Portfolio",
+      "description": "View your earning positions",
+      "url": "/portfolio",
+      "icons": [{ "src": "/icon.svg", "sizes": "any" }]
+    },
+    {
+      "name": "Earn",
+      "short_name": "Earn",
+      "description": "Deposit into a yield vault",
+      "url": "/deposit",
+      "icons": [{ "src": "/icon.svg", "sizes": "any" }]
+    }
   ]
 }
