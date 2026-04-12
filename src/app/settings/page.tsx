@@ -10,6 +10,7 @@ import { BottomNav } from "@/components/layout/BottomNav";
 import { Card } from "@/components/ui/Card";
 import { Toggle } from "@/components/ui/Toggle";
 import { AboutModal } from "@/components/settings/AboutModal";
+import { HowItWorksModal } from "@/components/settings/HowItWorksModal";
 import { usePreferences } from "@/lib/hooks/usePreferences";
 
 function truncateAddress(address: string): string {
@@ -25,6 +26,7 @@ function SettingsContent() {
   const [copied, setCopied] = useState(false);
   const [notificationsError, setNotificationsError] = useState<string | null>(null);
   const [aboutOpen, setAboutOpen] = useState(false);
+  const [howOpen, setHowOpen] = useState(false);
 
   const walletAddress = user?.wallet?.address ?? "";
   const email = user?.email?.address ?? "";
@@ -220,6 +222,19 @@ function SettingsContent() {
           </div>
         </Card>
 
+        {/* How it works */}
+        <Card shadow="subtle">
+          <button
+            className="flex items-center justify-between w-full cursor-pointer"
+            onClick={() => setHowOpen(true)}
+          >
+            <p className="text-sm font-semibold text-sprout-text-primary">
+              How Sprout works
+            </p>
+            <ExternalLink size={16} className="text-sprout-text-muted" />
+          </button>
+        </Card>
+
         {/* About */}
         <Card shadow="subtle">
           <button
@@ -246,6 +261,7 @@ function SettingsContent() {
       <BottomNav />
 
       <AboutModal open={aboutOpen} onClose={() => setAboutOpen(false)} />
+      <HowItWorksModal open={howOpen} onClose={() => setHowOpen(false)} />
     </main>
   );
 }
