@@ -188,12 +188,20 @@ export function TransactionModal({
                 </p>
               )}
 
-              <button
-                onClick={onRetry}
-                className="mt-5 w-full rounded-button px-6 py-4 text-base font-bold bg-gradient-to-br from-sprout-green-primary to-[#66BB6A] text-white shadow-glow transition-all duration-150 active:scale-[0.97] cursor-pointer"
-              >
-                Try Again
-              </button>
+              <div className="mt-5 w-full flex flex-col gap-2">
+                <button
+                  onClick={onRetry}
+                  className="w-full rounded-button px-6 py-4 text-base font-bold bg-gradient-to-br from-sprout-green-primary to-[#66BB6A] text-white shadow-glow transition-all duration-150 active:scale-[0.97] cursor-pointer"
+                >
+                  Try Again
+                </button>
+                <button
+                  onClick={onRetry}
+                  className="w-full px-6 py-3 text-sm font-semibold text-sprout-text-secondary hover:text-sprout-text-primary transition-colors cursor-pointer"
+                >
+                  Close
+                </button>
+              </div>
             </>
           )}
 
