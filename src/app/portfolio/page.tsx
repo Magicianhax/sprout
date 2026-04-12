@@ -9,7 +9,7 @@ import { PositionCard } from "@/components/portfolio/PositionCard";
 import { WalletBalanceCard } from "@/components/portfolio/WalletBalanceCard";
 import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
-import { Skeleton } from "@/components/ui/Skeleton";
+import { PositionCardSkeleton, WalletBalanceCardSkeleton } from "@/components/ui/CardSkeletons";
 import { usePreferences } from "@/lib/hooks/usePreferences";
 import { usePositions } from "@/lib/hooks/usePositions";
 import { useBalances } from "@/lib/hooks/useBalances";
@@ -47,10 +47,27 @@ function PortfolioContent() {
       </div>
 
       {loading && (
-        <div className="flex flex-col gap-3 px-5">
-          <Skeleton className="h-28 w-full" />
-          <Skeleton className="h-28 w-full" />
-          <Skeleton className="h-28 w-full" />
+        <div className="flex flex-col gap-6">
+          <section className="flex flex-col gap-3">
+            <div className="flex items-center gap-2 px-5">
+              <span className="w-2 h-2 rounded-full bg-gray-300" />
+              <span className="text-xs font-bold uppercase tracking-wide text-sprout-text-muted">
+                Not Earning
+              </span>
+            </div>
+            <WalletBalanceCardSkeleton />
+            <WalletBalanceCardSkeleton />
+          </section>
+          <section className="flex flex-col gap-3">
+            <div className="flex items-center gap-2 px-5">
+              <span className="w-2 h-2 rounded-full bg-sprout-green-primary" />
+              <span className="text-xs font-bold uppercase tracking-wide text-sprout-text-muted">
+                Earning
+              </span>
+            </div>
+            <PositionCardSkeleton />
+            <PositionCardSkeleton />
+          </section>
         </div>
       )}
 

@@ -39,6 +39,39 @@ body {
   background: linear-gradient(180deg, #E8F5E9 0%, #FFF8E1 40%, #FFFFFF 100%);
 }
 
+/* Skeleton shimmer — a soft gradient sweep that respects the active
+   theme via CSS variables below. */
+.sprout-shimmer {
+  position: relative;
+  overflow: hidden;
+  background-color: var(--sprout-shimmer-base, #ECEEF1);
+}
+
+.sprout-shimmer::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    var(--sprout-shimmer-highlight, rgba(255, 255, 255, 0.65)) 50%,
+    transparent 100%
+  );
+  transform: translateX(-100%);
+  animation: sprout-shimmer 1.4s ease-in-out infinite;
+}
+
+@keyframes sprout-shimmer {
+  100% {
+    transform: translateX(100%);
+  }
+}
+
+html.dark {
+  --sprout-shimmer-base: #17342B;
+  --sprout-shimmer-highlight: rgba(110, 231, 168, 0.10);
+}
+
 /* Dark mode — deep forest theme that mirrors the organic feel of the
    light theme. Activated by `dark` class on <html>. Overrides sprout
    tokens so every component that reads them flips automatically. */

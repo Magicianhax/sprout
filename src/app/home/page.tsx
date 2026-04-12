@@ -18,7 +18,7 @@ import { SortToggle } from "@/components/vault/SortToggle";
 import { ChevronLeft, ChevronRight, Search, X } from "lucide-react";
 import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
-import { Skeleton } from "@/components/ui/Skeleton";
+import { BalanceHeroSkeleton, VaultCardSkeleton } from "@/components/ui/CardSkeletons";
 import { usePreferences } from "@/lib/hooks/usePreferences";
 import { usePositions } from "@/lib/hooks/usePositions";
 import { useVaults } from "@/lib/hooks/useVaults";
@@ -56,10 +56,10 @@ function LiteHome() {
       </div>
 
       {loading ? (
-        <div className="flex flex-col gap-5 pt-2 px-5">
-          <Skeleton className="h-44 w-full" />
-          <Skeleton className="h-36 w-full" />
-          <Skeleton className="h-12 w-full" />
+        <div className="flex flex-col gap-5 pt-2">
+          <BalanceHeroSkeleton />
+          <VaultCardSkeleton />
+          <VaultCardSkeleton />
         </div>
       ) : error ? (
         <Card className="mx-5 text-center py-8">
@@ -271,10 +271,11 @@ function ProHome() {
 
       {/* Vault list */}
       {loading ? (
-        <div className="flex flex-col gap-3 px-5">
-          <Skeleton className="h-28 w-full" />
-          <Skeleton className="h-28 w-full" />
-          <Skeleton className="h-28 w-full" />
+        <div className="flex flex-col gap-3">
+          <VaultCardSkeleton />
+          <VaultCardSkeleton />
+          <VaultCardSkeleton />
+          <VaultCardSkeleton />
         </div>
       ) : error ? (
         <Card className="mx-5 text-center py-8">
