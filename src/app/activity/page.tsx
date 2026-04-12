@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { usePrivy } from "@privy-io/react-auth";
-import { ChevronLeft, ChevronRight } from "lucide-react";
+import { ChevronLeft, ChevronRight, Search, X } from "lucide-react";
 import { AuthGuard } from "@/components/layout/AuthGuard";
 import { Header } from "@/components/layout/Header";
 import { BottomNav } from "@/components/layout/BottomNav";
@@ -37,6 +37,7 @@ function ActivityContent() {
   const [selectedChains, setSelectedChains] = useState<number[]>([]);
   const [selectedTokens, setSelectedTokens] = useState<string[]>([]);
   const [selectedProtocols, setSelectedProtocols] = useState<string[]>([]);
+  const [searchQuery, setSearchQuery] = useState<string>("");
   const [page, setPage] = useState(1);
   const [selectedId, setSelectedId] = useState<string | null>(null);
 
@@ -76,6 +77,7 @@ function ActivityContent() {
   }, [classified]);
 
   const filtered = useMemo(() => {
+    const q = searchQuery.trim().toLowerCase();
     return classified.filter((c) => {
       if (
         selectedChains.length > 0 &&
@@ -93,16 +95,29 @@ function ActivityContent() {
         const proto = c.classification.vault?.protocol.name;
         if (!proto || !selectedProtocols.includes(proto)) return false;
       }
+      if (q) {
+        const hay = [
+          c.classification.label,
+          c.classification.primary.token.symbol,
+          c.classification.vault?.protocol.name ?? "",
+          c.group.hash,
+          ...c.group.transfers.map((t) => t.counterparty),
+          ...c.group.transfers.map((t) => t.token.symbol),
+        ]
+          .join(" ")
+          .toLowerCase();
+        if (!hay.includes(q)) return false;
+      }
       return true;
     });
-  }, [classified, selectedChains, selectedTokens, selectedProtocols]);
+  }, [classified, selectedChains, selectedTokens, selectedProtocols, searchQuery]);
 
   const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
 
-  // Reset to page 1 when filters change
+  // Reset to page 1 when filters or search change
   useEffect(() => {
     setPage(1);
-  }, [selectedChains, selectedTokens, selectedProtocols]);
+  }, [selectedChains, selectedTokens, selectedProtocols, searchQuery]);
 
   // Clamp the page if the list shrinks
   useEffect(() => {
@@ -119,12 +134,14 @@ function ActivityContent() {
   const hasActiveFilters =
     selectedChains.length > 0 ||
     selectedTokens.length > 0 ||
-    selectedProtocols.length > 0;
+    selectedProtocols.length > 0 ||
+    searchQuery.trim().length > 0;
 
   function clearFilters() {
     setSelectedChains([]);
     setSelectedTokens([]);
     setSelectedProtocols([]);
+    setSearchQuery("");
   }
 
   return (
@@ -147,6 +164,32 @@ function ActivityContent() {
         >
           Refresh
         </Button>
+      </div>
+
+      {/* Search bar */}
+      <div className="px-5 mb-3">
+        <div className="relative">
+          <Search
+            size={16}
+            className="absolute left-3.5 top-1/2 -translate-y-1/2 text-sprout-text-muted pointer-events-none"
+          />
+          <input
+            type="text"
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            placeholder="Search by token, protocol, address, tx hash"
+            className="w-full bg-sprout-card border border-sprout-border rounded-pill pl-10 pr-10 py-2.5 text-sm text-sprout-text-primary placeholder:text-sprout-text-muted shadow-subtle focus:outline-none focus:border-sprout-green-primary"
+          />
+          {searchQuery && (
+            <button
+              onClick={() => setSearchQuery("")}
+              className="absolute right-3 top-1/2 -translate-y-1/2 text-sprout-text-muted hover:text-sprout-text-primary cursor-pointer"
+              aria-label="Clear search"
+            >
+              <X size={16} />
+            </button>
+          )}
+        </div>
       </div>
 
       {/* Filters */}

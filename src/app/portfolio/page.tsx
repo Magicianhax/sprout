@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { usePrivy } from "@privy-io/react-auth";
 import { RefreshCw } from "lucide-react";
@@ -10,6 +10,9 @@ import { BottomNav } from "@/components/layout/BottomNav";
 import { PositionCard } from "@/components/portfolio/PositionCard";
 import { PartialWithdrawModal } from "@/components/portfolio/PartialWithdrawModal";
 import { WalletActionBar } from "@/components/portfolio/WalletActionBar";
+import { TokenIcon } from "@/components/ui/TokenIcon";
+import { CHAIN_NAMES } from "@/lib/constants";
+import { formatCurrency } from "@/lib/format";
 import type { Position } from "@/lib/types";
 import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
@@ -35,6 +38,27 @@ function PortfolioContent() {
 
   const withdraw = useWithdrawFlow();
   const [partialPosition, setPartialPosition] = useState<Position | null>(null);
+
+  // Pro view groups positions by chain (helps users see chain-level
+  // exposure at a glance). Lite view keeps the flat list.
+  const groupsByChain = useMemo(() => {
+    const byChain = new Map<number, Position[]>();
+    for (const p of positions) {
+      const bucket = byChain.get(p.chainId);
+      if (bucket) bucket.push(p);
+      else byChain.set(p.chainId, [p]);
+    }
+    return Array.from(byChain.entries())
+      .map(([chainId, items]) => ({
+        chainId,
+        positions: items,
+        totalUsd: items.reduce(
+          (sum, p) => sum + parseFloat(p.balanceUsd || "0"),
+          0
+        ),
+      }))
+      .sort((a, b) => b.totalUsd - a.totalUsd);
+  }, [positions]);
 
   function handlePositionAction(position: Position) {
     if (isPro) {
@@ -126,17 +150,52 @@ function PortfolioContent() {
                   {positions.length} position{positions.length !== 1 ? "s" : ""}
                 </span>
               </div>
-              <div className="flex flex-col gap-3">
-                {positions.map((position, i) => (
-                  <PositionCard
-                    key={`${position.chainId}-${position.asset.address}-${position.protocolName}-${i}`}
-                    position={position}
-                    showDetails={isPro}
-                    onAction={handlePositionAction}
-                    actionLabel={isPro ? "Withdraw" : "Stop Earning"}
-                  />
-                ))}
-              </div>
+
+              {isPro ? (
+                <div className="flex flex-col gap-5">
+                  {groupsByChain.map((group) => (
+                    <div key={group.chainId}>
+                      <div className="flex items-center gap-2 px-5 mb-2">
+                        <TokenIcon
+                          type="chain"
+                          identifier={group.chainId}
+                          size={16}
+                        />
+                        <span className="text-[11px] font-bold uppercase tracking-wider text-sprout-text-secondary">
+                          {CHAIN_NAMES[group.chainId] ?? `Chain ${group.chainId}`}
+                        </span>
+                        <span className="text-[11px] text-sprout-text-muted ml-auto">
+                          {formatCurrency(group.totalUsd)} · {group.positions.length}{" "}
+                          position{group.positions.length !== 1 ? "s" : ""}
+                        </span>
+                      </div>
+                      <div className="flex flex-col gap-3">
+                        {group.positions.map((position, i) => (
+                          <PositionCard
+                            key={`${position.chainId}-${position.asset.address}-${position.protocolName}-${i}`}
+                            position={position}
+                            showDetails={isPro}
+                            onAction={handlePositionAction}
+                            actionLabel="Withdraw"
+                          />
+                        ))}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div className="flex flex-col gap-3">
+                  {positions.map((position, i) => (
+                    <PositionCard
+                      key={`${position.chainId}-${position.asset.address}-${position.protocolName}-${i}`}
+                      position={position}
+                      showDetails={isPro}
+                      onAction={handlePositionAction}
+                      actionLabel="Stop Earning"
+                    />
+                  ))}
+                </div>
+              )}
             </section>
           )}
 
