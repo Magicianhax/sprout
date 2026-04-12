@@ -24,6 +24,8 @@ import { usePreferences } from "@/lib/hooks/usePreferences";
 import { usePositions } from "@/lib/hooks/usePositions";
 import { useVaults } from "@/lib/hooks/useVaults";
 import { useActivity } from "@/lib/hooks/useActivity";
+import { useBalances } from "@/lib/hooks/useBalances";
+import { priceFor, usePrices } from "@/lib/hooks/usePrices";
 import { formatCurrency, getRiskLevel } from "@/lib/format";
 import { CHAIN_NAMES, HOME_PAGE_SIZE } from "@/lib/constants";
 import { displayProtocol } from "@/lib/protocols";
@@ -42,8 +44,22 @@ function LiteHome() {
   const address = user?.wallet?.address;
   const { positions, loading, error, reload, totalBalance } = usePositions(address);
   const activity = useActivity(address);
+  const { balances } = useBalances(address);
+  const prices = usePrices();
 
   const hasPositions = positions.length > 0;
+
+  // Idle wallet tokens converted to USD using priced symbols; unknown
+  // tokens contribute 0 rather than an inflated guess.
+  const walletUsd = useMemo(
+    () =>
+      balances.reduce(
+        (sum, b) => sum + b.balanceFormatted * priceFor(prices, b.symbol),
+        0
+      ),
+    [balances, prices]
+  );
+  const totalValueUsd = totalBalance + walletUsd;
 
   // APY data is not available from the positions endpoint; show balance only
   const avgApy = 0;
@@ -81,7 +97,11 @@ function LiteHome() {
         </Card>
       ) : hasPositions ? (
         <div className="flex flex-col gap-5 pt-2">
-          <BalanceCard totalBalance={totalBalance} avgApy={avgApy} />
+          <BalanceCard
+            totalBalance={totalValueUsd}
+            earningBalance={totalBalance}
+            avgApy={avgApy}
+          />
           <EarningsChart />
 
           <div className="px-5 flex flex-col gap-3">
