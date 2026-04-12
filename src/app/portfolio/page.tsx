@@ -63,6 +63,29 @@ function PortfolioContent() {
 
       {!loading && !error && (
         <>
+          {/* Not Earning section (wallet balances) — shown first */}
+          {hasWallet && (
+            <section className="mb-6">
+              <div className="flex items-center gap-2 px-5 mb-3">
+                <span className="w-2 h-2 rounded-full bg-gray-300" />
+                <h2 className="text-xs font-bold uppercase tracking-wide text-sprout-text-secondary">
+                  Not Earning
+                </h2>
+                <span className="text-xs text-sprout-text-muted ml-auto">
+                  {nonEarning.length} token{nonEarning.length !== 1 ? "s" : ""}
+                </span>
+              </div>
+              <div className="flex flex-col gap-3">
+                {nonEarning.map((balance) => (
+                  <WalletBalanceCard
+                    key={`${balance.chainId}-${balance.symbol}`}
+                    balance={balance}
+                  />
+                ))}
+              </div>
+            </section>
+          )}
+
           {/* Earning section */}
           {hasPositions && (
             <section className="mb-6">
@@ -81,29 +104,6 @@ function PortfolioContent() {
                     key={`${position.chainId}-${position.asset.address}-${position.protocolName}-${i}`}
                     position={position}
                     showDetails={isPro}
-                  />
-                ))}
-              </div>
-            </section>
-          )}
-
-          {/* Not Earning section (wallet balances) */}
-          {hasWallet && (
-            <section className="mb-6">
-              <div className="flex items-center gap-2 px-5 mb-3">
-                <span className="w-2 h-2 rounded-full bg-gray-300" />
-                <h2 className="text-xs font-bold uppercase tracking-wide text-sprout-text-secondary">
-                  Not Earning
-                </h2>
-                <span className="text-xs text-sprout-text-muted ml-auto">
-                  {nonEarning.length} token{nonEarning.length !== 1 ? "s" : ""}
-                </span>
-              </div>
-              <div className="flex flex-col gap-3">
-                {nonEarning.map((balance) => (
-                  <WalletBalanceCard
-                    key={`${balance.chainId}-${balance.symbol}`}
-                    balance={balance}
                   />
                 ))}
               </div>
