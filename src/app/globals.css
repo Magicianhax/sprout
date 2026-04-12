@@ -73,13 +73,16 @@ html.dark {
 }
 
 /* Page enter — wrapper in root layout remounts on every navigation
-   and replays this keyframe. */
+   and replays this keyframe. Opacity-only on purpose: any non-identity
+   `transform` on the wrapper would create a new containing block and
+   detach `position: fixed` descendants (Header / BottomNav) from the
+   viewport. */
 @keyframes sprout-page-enter {
-  from { opacity: 0; transform: translateY(10px); }
-  to   { opacity: 1; transform: translateY(0); }
+  from { opacity: 0; }
+  to   { opacity: 1; }
 }
 .sprout-page-enter {
-  animation: sprout-page-enter 0.32s cubic-bezier(0.22, 0.61, 0.36, 1) both;
+  animation: sprout-page-enter 0.28s ease-out both;
 }
 
 /* Shared modal animations — used by every modal in the app via the
