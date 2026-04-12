@@ -36,9 +36,14 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ message: "Invalid limit" }, { status: 400 });
   }
 
+  // LI.FI's param name is `wallet` (sending OR receiving). We previously
+  // passed `fromAddress` which is silently ignored, so the endpoint fell
+  // back to returning the global integrator feed — every user's transfers.
+  // Lowercase the address because the upstream validates EIP-55 checksums
+  // for mixed-case inputs.
   const upstreamParams = new URLSearchParams({
-    fromAddress: address,
-    limit: limitRaw,
+    wallet: address.toLowerCase(),
+    paginationLimit: limitRaw,
   });
   const upstreamUrl = `${LIFI_API_BASE}/v2/analytics/transfers?${upstreamParams.toString()}`;
 
