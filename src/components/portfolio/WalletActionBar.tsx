@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
   ArrowDownToLine,
@@ -9,11 +9,15 @@ import {
   Copy,
   MinusCircle,
   Sprout,
+  Wallet,
 } from "lucide-react";
 import { Card } from "@/components/ui/Card";
 import { ReceiveModal } from "@/components/portfolio/ReceiveModal";
 import { SendModal } from "@/components/portfolio/SendModal";
+import { WalletBalancesModal } from "@/components/portfolio/WalletBalancesModal";
 import { useBalances } from "@/lib/hooks/useBalances";
+import { priceFor, usePrices } from "@/lib/hooks/usePrices";
+import { formatCurrency } from "@/lib/format";
 
 function truncateAddress(address: string): string {
   if (address.length < 10) return address;
@@ -24,6 +28,12 @@ interface WalletActionBarProps {
   variant?: "full" | "compact";
   walletAddress: string;
   hasEarningPositions: boolean;
+  /**
+   * Total USD value of the user's earning positions, provided by the
+   * parent page (via usePositions). Combined with the wallet-side
+   * token USD to render a single "total value" figure in the card.
+   */
+  earningBalanceUsd?: number;
 }
 
 interface ActionButtonProps {
@@ -63,12 +73,34 @@ export function WalletActionBar({
   variant = "full",
   walletAddress,
   hasEarningPositions,
+  earningBalanceUsd = 0,
 }: WalletActionBarProps) {
   const router = useRouter();
+  const prices = usePrices();
   const [receiveOpen, setReceiveOpen] = useState(false);
   const [sendOpen, setSendOpen] = useState(false);
+  const [balancesOpen, setBalancesOpen] = useState(false);
   const [copied, setCopied] = useState(false);
   const { balances } = useBalances(walletAddress);
+
+  const sendable = useMemo(
+    () => balances.filter((b) => b.balanceFormatted > 0),
+    [balances]
+  );
+
+  // Sum the wallet-side tokens at their USD prices. Tokens without a
+  // known price contribute 0 — accurate rather than inflating with a
+  // fake number.
+  const walletUsd = useMemo(
+    () =>
+      sendable.reduce(
+        (sum, b) => sum + b.balanceFormatted * priceFor(prices, b.symbol),
+        0
+      ),
+    [sendable, prices]
+  );
+
+  const totalUsd = earningBalanceUsd + walletUsd;
 
   if (!walletAddress) return null;
 
@@ -122,7 +154,7 @@ export function WalletActionBar({
         </Card>
       ) : (
         <Card shadow="subtle" className="mx-5 !p-4">
-          <div className="flex items-center justify-between mb-3 px-1 gap-3">
+          <div className="flex items-start justify-between mb-3 px-1 gap-3">
             <div className="min-w-0">
               <p className="text-[10px] font-bold uppercase tracking-wider text-sprout-text-muted">
                 Your wallet
@@ -148,14 +180,32 @@ export function WalletActionBar({
                   />
                 )}
               </button>
+              <p className="font-heading text-2xl font-800 text-sprout-text-primary mt-2">
+                {formatCurrency(totalUsd)}
+              </p>
+              <p className="text-[11px] text-sprout-text-muted">
+                Total value
+              </p>
             </div>
             {copied && (
-              <span className="text-[11px] font-semibold text-sprout-green-dark shrink-0">
+              <span className="text-[11px] font-semibold text-sprout-green-dark shrink-0 mt-5">
                 Copied!
               </span>
             )}
           </div>
+
           {actions}
+
+          {sendable.length > 0 && (
+            <button
+              type="button"
+              onClick={() => setBalancesOpen(true)}
+              className="mt-3 w-full inline-flex items-center justify-center gap-1.5 text-xs font-semibold text-sprout-green-dark cursor-pointer"
+            >
+              <Wallet size={13} strokeWidth={2.25} />
+              View {sendable.length} token{sendable.length === 1 ? "" : "s"} in your wallet →
+            </button>
+          )}
         </Card>
       )}
 
@@ -169,6 +219,11 @@ export function WalletActionBar({
         walletAddress={walletAddress}
         balances={balances}
         onClose={() => setSendOpen(false)}
+      />
+      <WalletBalancesModal
+        open={balancesOpen}
+        onClose={() => setBalancesOpen(false)}
+        balances={sendable}
       />
     </>
   );
