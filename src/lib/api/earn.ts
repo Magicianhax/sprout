@@ -4,7 +4,10 @@ import type { VaultsResponse, Chain, PositionsResponse } from "@/lib/types";
 // Earn API doesn't support CORS — all calls proxied through /api/earn/
 const API_BASE = "/api/earn";
 
-export async function fetchVaults(params?: {
+// Raw fetch — returns the API response as-is without any client-side filter.
+// Used internally by the paginator so early breaks aren't triggered by the
+// SUPPORTED_CHAIN_IDS filter eating entire pages.
+async function fetchVaultsRaw(params?: {
   chainId?: number;
   asset?: string;
   sortBy?: "tvl" | "apy";
@@ -12,7 +15,6 @@ export async function fetchVaults(params?: {
   cursor?: string;
 }): Promise<VaultsResponse> {
   const searchParams = new URLSearchParams();
-  // API only accepts a single chainId — omit to get all, filter client-side
   if (params?.chainId) searchParams.set("chainId", String(params.chainId));
   if (params?.asset) searchParams.set("asset", params.asset);
   if (params?.sortBy) searchParams.set("sortBy", params.sortBy);
@@ -20,10 +22,21 @@ export async function fetchVaults(params?: {
   if (params?.cursor) searchParams.set("cursor", params.cursor);
   const res = await fetch(`${API_BASE}/v1/earn/vaults?${searchParams}`);
   if (!res.ok) throw new Error(`Earn API error: ${res.status}`);
-  const data: VaultsResponse = await res.json();
-  // Filter to supported chains client-side
+  return res.json();
+}
+
+export async function fetchVaults(params?: {
+  chainId?: number;
+  asset?: string;
+  sortBy?: "tvl" | "apy";
+  limit?: number;
+  cursor?: string;
+}): Promise<VaultsResponse> {
+  const data = await fetchVaultsRaw(params);
   if (!params?.chainId) {
-    data.data = data.data.filter((v) => SUPPORTED_CHAIN_IDS.includes(v.chainId as typeof SUPPORTED_CHAIN_IDS[number]));
+    data.data = data.data.filter((v) =>
+      SUPPORTED_CHAIN_IDS.includes(v.chainId as typeof SUPPORTED_CHAIN_IDS[number])
+    );
   }
   return data;
 }
@@ -45,7 +58,9 @@ export async function fetchAllVaults(params?: {
   let cursor: string | undefined;
 
   for (let page = 0; page < maxPages; page++) {
-    const res = await fetchVaults({
+    // Use raw fetcher so the SUPPORTED_CHAIN_IDS filter doesn't zero-out
+    // a page and trigger an early break while nextCursor is still valid.
+    const res = await fetchVaultsRaw({
       chainId: params?.chainId,
       asset: params?.asset,
       sortBy: params?.sortBy,
@@ -54,13 +69,19 @@ export async function fetchAllVaults(params?: {
     });
 
     for (const v of res.data) {
+      if (
+        !params?.chainId &&
+        !SUPPORTED_CHAIN_IDS.includes(v.chainId as typeof SUPPORTED_CHAIN_IDS[number])
+      ) {
+        continue;
+      }
       const key = `${v.chainId}-${v.address}`;
       if (seen.has(key)) continue;
       seen.add(key);
       combined.data.push(v);
     }
 
-    if (!res.nextCursor || res.data.length === 0) break;
+    if (!res.nextCursor) break;
     cursor = res.nextCursor;
   }
 

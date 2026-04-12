@@ -36,7 +36,9 @@ async function loadVaults(token?: string): Promise<Vault[]> {
     asset: token,
   })
     .then((res) => {
-      cache.set(key, res.data);
+      // Don't cache empty results — they're almost certainly a transient
+      // upstream hiccup and we'd rather retry than get stuck on [].
+      if (res.data.length > 0) cache.set(key, res.data);
       inflight.delete(key);
       return res.data;
     })
