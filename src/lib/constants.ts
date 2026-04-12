@@ -150,4 +150,5 @@ export const DEFAULT_PREFERENCES = {
   onboardingComplete: false,
   notificationsEnabled: false,
   darkMode: false,
+  riskAcknowledged: false,
 };

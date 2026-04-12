@@ -13,10 +13,17 @@ import type { Position } from "@/lib/types";
 interface PositionCardProps {
   position: Position;
   showDetails: boolean;
-  onStopEarning: (position: Position) => void;
+  /** Fires when the user taps the primary Stop/Withdraw button. */
+  onAction: (position: Position) => void;
+  /** Text of the primary action button (defaults to "Stop Earning"). */
+  actionLabel?: string;
 }
 
-export function PositionCard({ position, onStopEarning }: PositionCardProps) {
+export function PositionCard({
+  position,
+  onAction,
+  actionLabel = "Stop Earning",
+}: PositionCardProps) {
   const { asset, protocolName, chainId, balanceUsd, balanceNative } = position;
   const chainName = CHAIN_NAMES[chainId] ?? `Chain ${chainId}`;
   const balanceUsdNum = parseFloat(balanceUsd || "0");
@@ -57,9 +64,9 @@ export function PositionCard({ position, onStopEarning }: PositionCardProps) {
     };
   }, [chainId, asset.symbol, asset.address, protocolName]);
 
-  function handleStopEarning(e: React.MouseEvent) {
+  function handleAction(e: React.MouseEvent) {
     e.stopPropagation();
-    onStopEarning(position);
+    onAction(position);
   }
 
   return (
@@ -109,9 +116,9 @@ export function PositionCard({ position, onStopEarning }: PositionCardProps) {
 
         <button
           className="text-xs font-semibold text-sprout-red-stop cursor-pointer py-1 px-2"
-          onClick={handleStopEarning}
+          onClick={handleAction}
         >
-          Stop Earning
+          {actionLabel}
         </button>
       </div>
     </Card>

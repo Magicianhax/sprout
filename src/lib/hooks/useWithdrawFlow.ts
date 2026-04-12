@@ -38,6 +38,7 @@ const ERC4626_PROTOCOLS = new Set([
 // Function selectors (keccak256 first 4 bytes)
 const BALANCE_OF_SELECTOR = "0x70a08231"; // balanceOf(address)
 const REDEEM_SELECTOR = "0xba087652"; // redeem(uint256,address,address)
+const WITHDRAW_SELECTOR = "0xb460af94"; // withdraw(uint256,address,address)
 
 function hex32(value: string | bigint): string {
   const hex =
@@ -55,6 +56,14 @@ function encodeRedeem(shares: bigint, receiver: string, owner: string): string {
   return `${REDEEM_SELECTOR}${hex32(shares)}${hex32(receiver)}${hex32(owner)}`;
 }
 
+function encodeWithdraw(
+  assets: bigint,
+  receiver: string,
+  owner: string
+): string {
+  return `${WITHDRAW_SELECTOR}${hex32(assets)}${hex32(receiver)}${hex32(owner)}`;
+}
+
 type Phase = "idle" | "quoting" | "confirming" | "success" | "error";
 
 interface FlowState {
@@ -63,6 +72,8 @@ interface FlowState {
   quote: ComposerQuote | null;
   txHash: string;
   errorMessage: string;
+  /** Amount requested on the current run — used by retry. Undefined means full. */
+  requestedAmount?: number;
 }
 
 const INITIAL: FlowState = {
@@ -73,20 +84,25 @@ const INITIAL: FlowState = {
   errorMessage: "",
 };
 
-// On successful withdrawal: remove the position from the shared cache
-// immediately so the UI updates without waiting for the earn indexer,
-// and schedule a few background reloads to confirm once the indexer
-// catches up (takes ~5-30 s depending on chain).
-function markWithdrawn(position: Position, walletAddress: string) {
-  optimisticallyRemovePosition(
-    walletAddress,
-    position.chainId,
-    position.asset.address,
-    position.protocolName
-  );
-  // Background re-sync — fire and forget. Each attempt overwrites the
-  // cache with whatever the indexer returns. The activity feed is also
-  // invalidated so any LI.FI-mediated history entries refresh.
+// On successful withdrawal: if the user withdrew the full position we
+// remove it from the shared cache immediately so the UI updates without
+// waiting for the earn indexer. For partial withdrawals we just kick a
+// reload — the position still exists with a smaller balance and the
+// indexer will report the new number after ~5–30 s. In both cases we
+// schedule a few background reloads to confirm the final state.
+function markWithdrawn(
+  position: Position,
+  walletAddress: string,
+  isFullWithdrawal: boolean
+) {
+  if (isFullWithdrawal) {
+    optimisticallyRemovePosition(
+      walletAddress,
+      position.chainId,
+      position.asset.address,
+      position.protocolName
+    );
+  }
   for (const ms of POSITION_RESYNC_DELAYS_MS) {
     setTimeout(() => {
       invalidatePositions(walletAddress).catch((err) => {
@@ -176,7 +192,7 @@ export function useWithdrawFlow() {
   );
 
   const run = useCallback(
-    async (position: Position) => {
+    async (position: Position, options?: { amount?: number }) => {
       if (inFlightRef.current) return;
       inFlightRef.current = true;
       closedRef.current = false;
@@ -187,13 +203,24 @@ export function useWithdrawFlow() {
         quote: null,
         txHash: "",
         errorMessage: "",
+        requestedAmount: options?.amount,
       });
 
       try {
-        const numeric = parseFloat(position.balanceNative);
-        if (!Number.isFinite(numeric) || numeric <= 0) {
+        const fullBalance = parseFloat(position.balanceNative);
+        if (!Number.isFinite(fullBalance) || fullBalance <= 0) {
           throw new Error("Nothing to withdraw — your balance is zero.");
         }
+
+        // Clamp the requested amount to the actual balance. Anything
+        // within a tiny epsilon of the balance is treated as a full
+        // withdrawal (avoids rounding errors leaving 0.000001 dust).
+        const requested =
+          options?.amount && options.amount > 0
+            ? Math.min(options.amount, fullBalance)
+            : fullBalance;
+        const isFullWithdrawal = requested >= fullBalance * 0.9999;
+        const numeric = requested;
 
         const wallet = wallets.find((w) => !!w.address) ?? wallets[0];
         if (!wallet) {
@@ -226,22 +253,37 @@ export function useWithdrawFlow() {
             throw new Error("Wallet is on the wrong chain. Please switch networks.");
           }
 
-          const balanceHex = (await provider.request({
-            method: "eth_call",
-            params: [
-              { to: vault.address, data: encodeBalanceOf(wallet.address) },
-              "latest",
-            ],
-          })) as string;
+          let data: string;
+          if (isFullWithdrawal) {
+            // Full exit — read share balance and redeem all of it.
+            // Using redeem() (shares) is the safest way to leave nothing
+            // behind since the vault itself converts shares → assets.
+            const balanceHex = (await provider.request({
+              method: "eth_call",
+              params: [
+                { to: vault.address, data: encodeBalanceOf(wallet.address) },
+                "latest",
+              ],
+            })) as string;
 
-          const shares = BigInt(balanceHex);
-          if (shares === BigInt(0)) {
-            throw new Error("No shares to redeem — position already empty.");
+            const shares = BigInt(balanceHex);
+            if (shares === BigInt(0)) {
+              throw new Error("No shares to redeem — position already empty.");
+            }
+            data = encodeRedeem(shares, wallet.address, wallet.address);
+          } else {
+            // Partial — use withdraw(assets, receiver, owner). Takes
+            // the underlying amount the user wants back; the vault
+            // burns just enough shares to cover it.
+            const assets = BigInt(toTokenUnits(numeric, position.asset.decimals));
+            if (assets === BigInt(0)) {
+              throw new Error("Withdraw amount rounds to zero.");
+            }
+            data = encodeWithdraw(assets, wallet.address, wallet.address);
           }
 
           safeSetState((s) => ({ ...s, phase: "confirming" }));
 
-          const data = encodeRedeem(shares, wallet.address, wallet.address);
           const hash = (await provider.request({
             method: "eth_sendTransaction",
             params: [
@@ -253,7 +295,7 @@ export function useWithdrawFlow() {
             ],
           })) as string;
 
-          markWithdrawn(position, wallet.address);
+          markWithdrawn(position, wallet.address, isFullWithdrawal);
           safeSetState((s) => ({ ...s, phase: "success", txHash: hash }));
           return;
         }
@@ -304,7 +346,7 @@ export function useWithdrawFlow() {
           ],
         });
 
-        markWithdrawn(position, wallet.address);
+        markWithdrawn(position, wallet.address, isFullWithdrawal);
         safeSetState((s) => ({ ...s, phase: "success", txHash: hash as string }));
       } catch (err) {
         const message = err instanceof Error ? err.message : "Withdrawal failed";
@@ -318,8 +360,8 @@ export function useWithdrawFlow() {
 
   const retry = useCallback(() => {
     if (!state.position) return;
-    void run(state.position);
-  }, [run, state.position]);
+    void run(state.position, { amount: state.requestedAmount });
+  }, [run, state.position, state.requestedAmount]);
 
   const modalStatus: "confirming" | "success" | "error" | null =
     state.phase === "success"

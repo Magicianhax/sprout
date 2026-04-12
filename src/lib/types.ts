@@ -6,6 +6,8 @@ export interface UserPreferences {
   onboardingComplete: boolean;
   notificationsEnabled: boolean;
   darkMode: boolean;
+  /** User has acknowledged the smart-contract risk notice at least once. */
+  riskAcknowledged: boolean;
 }
 
 export interface VaultProtocol {
@@ -89,7 +91,9 @@ export interface ComposerQuote {
   estimate: {
     fromAmount: string;
     toAmount: string;
-    gasCosts: { amountUSD: string }[];
+    fromAmountUSD?: string;
+    toAmountUSD?: string;
+    gasCosts: { amountUSD: string; amount?: string }[];
   };
 }
 

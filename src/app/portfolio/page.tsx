@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { usePrivy } from "@privy-io/react-auth";
 import { RefreshCw } from "lucide-react";
@@ -8,7 +8,9 @@ import { AuthGuard } from "@/components/layout/AuthGuard";
 import { Header } from "@/components/layout/Header";
 import { BottomNav } from "@/components/layout/BottomNav";
 import { PositionCard } from "@/components/portfolio/PositionCard";
+import { PartialWithdrawModal } from "@/components/portfolio/PartialWithdrawModal";
 import { WalletActionBar } from "@/components/portfolio/WalletActionBar";
+import type { Position } from "@/lib/types";
 import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
 import { PositionCardSkeleton } from "@/components/ui/CardSkeletons";
@@ -32,6 +34,17 @@ function PortfolioContent() {
   const loading = positionsLoading || balancesLoading;
 
   const withdraw = useWithdrawFlow();
+  const [partialPosition, setPartialPosition] = useState<Position | null>(null);
+
+  function handlePositionAction(position: Position) {
+    if (isPro) {
+      // Pro users get the amount picker so they can withdraw partially.
+      setPartialPosition(position);
+    } else {
+      // Lite users get the one-tap full-exit flow.
+      void withdraw.start(position);
+    }
+  }
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -119,7 +132,8 @@ function PortfolioContent() {
                     key={`${position.chainId}-${position.asset.address}-${position.protocolName}-${i}`}
                     position={position}
                     showDetails={isPro}
-                    onStopEarning={withdraw.start}
+                    onAction={handlePositionAction}
+                    actionLabel={isPro ? "Withdraw" : "Stop Earning"}
                   />
                 ))}
               </div>
@@ -146,6 +160,16 @@ function PortfolioContent() {
       )}
 
       <BottomNav />
+
+      <PartialWithdrawModal
+        open={partialPosition !== null}
+        position={partialPosition}
+        onClose={() => setPartialPosition(null)}
+        onConfirm={(position, amount) => {
+          setPartialPosition(null);
+          void withdraw.start(position, { amount });
+        }}
+      />
 
       <TransactionModal
         status={withdraw.modalStatus}

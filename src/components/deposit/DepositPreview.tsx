@@ -5,11 +5,22 @@ interface DepositPreviewProps {
   amount: number;
   apyPercent: number;
   networkFeeUsd: number;
+  /** Pro-only: max slippage tolerance sent to the router (percent, e.g. 0.5). */
+  maxSlippagePercent?: number;
+  /** Pro-only: USD price impact of the swap/bridge (fromAmountUSD - toAmountUSD). */
+  priceImpactUsd?: number;
 }
 
-export function DepositPreview({ amount, apyPercent, networkFeeUsd }: DepositPreviewProps) {
+export function DepositPreview({
+  amount,
+  apyPercent,
+  networkFeeUsd,
+  maxSlippagePercent,
+  priceImpactUsd,
+}: DepositPreviewProps) {
   const daily = dailyEarnings(amount, apyPercent);
   const monthly = monthlyEarnings(amount, apyPercent);
+  const showImpact = priceImpactUsd !== undefined && Math.abs(priceImpactUsd) >= 0.01;
 
   return (
     <Card className="w-full">
@@ -27,6 +38,20 @@ export function DepositPreview({ amount, apyPercent, networkFeeUsd }: DepositPre
           value={networkFeeUsd > 0 ? `~${formatCurrency(networkFeeUsd)}` : "—"}
           muted
         />
+        {showImpact && priceImpactUsd !== undefined && (
+          <PreviewRow
+            label="Price impact"
+            value={`~${formatCurrency(priceImpactUsd)}`}
+            muted
+          />
+        )}
+        {maxSlippagePercent !== undefined && maxSlippagePercent > 0 && (
+          <PreviewRow
+            label="Max slippage"
+            value={`${maxSlippagePercent.toFixed(2)}%`}
+            muted
+          />
+        )}
       </div>
     </Card>
   );

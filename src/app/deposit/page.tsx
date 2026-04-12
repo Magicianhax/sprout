@@ -9,7 +9,14 @@ import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
 import { TokenSelector, type TokenSelection } from "@/components/deposit/TokenSelector";
 import { TransactionModal } from "@/components/deposit/TransactionModal";
-import { QUOTE_DEBOUNCE_MS, TOKEN_ADDRESSES, TOKEN_DECIMALS } from "@/lib/constants";
+import { RiskDisclaimerModal } from "@/components/deposit/RiskDisclaimerModal";
+import {
+  DEFAULT_SLIPPAGE,
+  NATIVE_SYMBOL_BY_CHAIN,
+  QUOTE_DEBOUNCE_MS,
+  TOKEN_ADDRESSES,
+  TOKEN_DECIMALS,
+} from "@/lib/constants";
 import { useBalances } from "@/lib/hooks/useBalances";
 import { invalidatePositions } from "@/lib/hooks/usePositions";
 import { invalidateActivity } from "@/lib/hooks/useActivity";
@@ -39,7 +46,8 @@ function DepositPageContent() {
   const searchParams = useSearchParams();
   const { user } = usePrivy();
   const { wallets } = useWallets();
-  const { preferences } = usePreferences();
+  const { preferences, update: updatePreferences } = usePreferences();
+  const [riskModalOpen, setRiskModalOpen] = useState(false);
 
   const urlToken = searchParams.get("token");
   const urlVault = searchParams.get("vault");
@@ -169,6 +177,23 @@ function DepositPageContent() {
     return () => clearTimeout(timer);
   }, [fetchQuote]);
 
+  // Gate the first-ever deposit on a smart-contract-risk acknowledgement.
+  // After the user accepts once, the flag persists in preferences and
+  // every subsequent deposit goes straight through.
+  function handlePrimaryAction() {
+    if (!preferences.riskAcknowledged) {
+      setRiskModalOpen(true);
+      return;
+    }
+    void handleConfirm();
+  }
+
+  function handleAcknowledgeRisk() {
+    updatePreferences({ riskAcknowledged: true });
+    setRiskModalOpen(false);
+    void handleConfirm();
+  }
+
   async function handleConfirm() {
     if (!quote || !walletAddress) return;
 
@@ -246,6 +271,30 @@ function DepositPageContent() {
   const isCrossChain = vault !== null && tokenSelection.chainId !== vault.chainId;
   const isLite = preferences.mode === "lite";
 
+  // Gas sufficiency check — look up the user's native balance on the
+  // source chain and compare to the estimated gas cost (plus 10% for
+  // spikes). If the deposit token IS the native token we deduct the
+  // deposit amount first so max-out flows don't silently underpay.
+  const nativeSymbol = NATIVE_SYMBOL_BY_CHAIN[tokenSelection.chainId] ?? "ETH";
+  const nativeBalance =
+    walletBalances.find(
+      (b) => b.chainId === tokenSelection.chainId && b.symbol === nativeSymbol
+    )?.balanceFormatted ?? 0;
+  const gasCostNativeRaw = quote?.estimate.gasCosts[0]?.amount ?? "0";
+  const gasCostNative = gasCostNativeRaw
+    ? Number(gasCostNativeRaw) / 1e18
+    : 0;
+  const depositsNative = tokenSelection.symbol === nativeSymbol;
+  const nativeAfterDeposit = depositsNative
+    ? nativeBalance - (validAmount ? numericAmount : 0)
+    : nativeBalance;
+  const insufficientGas =
+    !!quote &&
+    gasCostNative > 0 &&
+    nativeAfterDeposit < gasCostNative * 1.1 &&
+    !insufficientBalance;
+  const canSubmitWithGas = canSubmit && !insufficientGas;
+
   const modalStatus =
     status === "confirming" || status === "success" || status === "error" ? status : null;
 
@@ -293,10 +342,15 @@ function DepositPageContent() {
                 You only have {selectedTokenBalance.toFixed(4)} {tokenSelection.symbol}
               </p>
             )}
-            {!insufficientBalance && status === "quoting" && validAmount && (
+            {!insufficientBalance && insufficientGas && (
+              <p className="text-center text-xs text-sprout-red-stop font-semibold">
+                Need ~{gasCostNative.toFixed(6)} {nativeSymbol} for gas. Receive some {nativeSymbol} to continue.
+              </p>
+            )}
+            {!insufficientBalance && !insufficientGas && status === "quoting" && validAmount && (
               <p className="text-center text-xs text-sprout-text-muted animate-pulse">Finding best rate...</p>
             )}
-            {!insufficientBalance && quoteError && (
+            {!insufficientBalance && !insufficientGas && quoteError && (
               <p className="text-center text-xs text-red-500">{quoteError}</p>
             )}
           </div>
@@ -304,12 +358,14 @@ function DepositPageContent() {
           <div className="px-5 pb-8 pt-2 bg-sprout-gradient">
             <Button
               className="w-full"
-              disabled={!canSubmit}
+              disabled={!canSubmitWithGas}
               loading={status === "quoting" || status === "confirming"}
-              onClick={() => void handleConfirm()}
+              onClick={handlePrimaryAction}
             >
               {insufficientBalance
                 ? "Insufficient balance"
+                : insufficientGas
+                ? `Need ${nativeSymbol} for gas`
                 : status === "quoting"
                 ? "Finding best rate..."
                 : status === "confirming"
@@ -396,7 +452,14 @@ function DepositPageContent() {
                 {CHAIN_NAMES[tokenSelection.chainId] ?? tokenSelection.chainId}.
               </div>
             )}
-            {!insufficientBalance && validAmount && vault && (
+            {!insufficientBalance && insufficientGas && (
+              <div className="bg-amber-50 rounded-2xl px-4 py-3 text-sm text-amber-800">
+                You need about {gasCostNative.toFixed(6)} {nativeSymbol} on{" "}
+                {CHAIN_NAMES[tokenSelection.chainId] ?? tokenSelection.chainId}{" "}
+                to pay for gas. Receive some {nativeSymbol} first.
+              </div>
+            )}
+            {!insufficientBalance && !insufficientGas && validAmount && vault && (
               <>
                 {status === "quoting" ? (
                   <div className="text-center py-4 text-sm text-sprout-text-muted animate-pulse">
@@ -411,6 +474,13 @@ function DepositPageContent() {
                     amount={numericAmount}
                     apyPercent={apy}
                     networkFeeUsd={networkFeeUsd}
+                    maxSlippagePercent={DEFAULT_SLIPPAGE * 100}
+                    priceImpactUsd={
+                      quote?.estimate.fromAmountUSD && quote.estimate.toAmountUSD
+                        ? parseFloat(quote.estimate.fromAmountUSD) -
+                          parseFloat(quote.estimate.toAmountUSD)
+                        : undefined
+                    }
                   />
                 )}
               </>
@@ -433,12 +503,14 @@ function DepositPageContent() {
           <div className="px-5 pb-8 pt-2 bg-sprout-gradient">
             <Button
               className="w-full"
-              disabled={!canSubmit}
+              disabled={!canSubmitWithGas}
               loading={status === "confirming"}
-              onClick={() => void handleConfirm()}
+              onClick={handlePrimaryAction}
             >
               {insufficientBalance
                 ? "Insufficient balance"
+                : insufficientGas
+                ? `Need ${nativeSymbol} for gas`
                 : status === "confirming"
                 ? "Confirming…"
                 : "Confirm"}
@@ -447,6 +519,12 @@ function DepositPageContent() {
           </div>
         </>
       )}
+
+      <RiskDisclaimerModal
+        open={riskModalOpen}
+        onAccept={handleAcknowledgeRisk}
+        onClose={() => setRiskModalOpen(false)}
+      />
 
       <TransactionModal
         status={modalStatus}
