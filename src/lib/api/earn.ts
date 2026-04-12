@@ -28,6 +28,46 @@ export async function fetchVaults(params?: {
   return data;
 }
 
+// Fetch ALL pages of vaults by following nextCursor until exhausted.
+// Capped at `maxPages` to protect against runaway loops.
+export async function fetchAllVaults(params?: {
+  chainId?: number;
+  asset?: string;
+  sortBy?: "tvl" | "apy";
+  pageSize?: number;
+  maxPages?: number;
+}): Promise<VaultsResponse> {
+  const pageSize = params?.pageSize ?? 50;
+  const maxPages = params?.maxPages ?? 10;
+
+  const combined: VaultsResponse = { data: [], nextCursor: undefined, total: 0 };
+  const seen = new Set<string>();
+  let cursor: string | undefined;
+
+  for (let page = 0; page < maxPages; page++) {
+    const res = await fetchVaults({
+      chainId: params?.chainId,
+      asset: params?.asset,
+      sortBy: params?.sortBy,
+      limit: pageSize,
+      cursor,
+    });
+
+    for (const v of res.data) {
+      const key = `${v.chainId}-${v.address}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      combined.data.push(v);
+    }
+
+    if (!res.nextCursor || res.data.length === 0) break;
+    cursor = res.nextCursor;
+  }
+
+  combined.total = combined.data.length;
+  return combined;
+}
+
 export async function fetchChains(): Promise<Chain[]> {
   const res = await fetch(`${API_BASE}/v1/earn/chains`);
   if (!res.ok) throw new Error(`Chains API error: ${res.status}`);

@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback } from "react";
 import type { Vault, SortBy } from "@/lib/types";
-import { fetchVaults } from "@/lib/api/earn";
+import { fetchAllVaults } from "@/lib/api/earn";
 import { parseTvl, getRiskLevel } from "@/lib/format";
 
 interface UseVaultsOptions {
@@ -21,9 +21,10 @@ export function useVaults(options: UseVaultsOptions = {}) {
     setLoading(true);
     setError(null);
     try {
-      const res = await fetchVaults({
+      const res = await fetchAllVaults({
         sortBy: options.sortBy || "tvl",
-        limit: 50,
+        pageSize: 50,
+        maxPages: 10,
         asset: options.token,
       });
       let filtered = res.data;
