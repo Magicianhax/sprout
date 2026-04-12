@@ -72,6 +72,48 @@ function findVaultByAddress(
   );
 }
 
+// Whitelist of symbols we consider "real" beyond the vault cache.
+// Stables, major wrappers, liquid staking. Case-insensitive.
+const KNOWN_TOKEN_SYMBOLS = new Set([
+  "ETH",
+  "POL",
+  "MATIC",
+  "WETH",
+  "WBTC",
+  "USDC",
+  "USDC.E",
+  "USDT",
+  "USDT0",
+  "DAI",
+  "USDS",
+  "FRAX",
+  "LUSD",
+  "CRVUSD",
+  "GHO",
+  "PYUSD",
+  "TUSD",
+  "STETH",
+  "WSTETH",
+  "CBETH",
+  "CBBTC",
+  "RETH",
+  "WEETH",
+  "EETH",
+]);
+
+function isRecognizedTransfer(t: WalletTransfer, vaults: Vault[]): boolean {
+  // Native chain token is always fine
+  if (t.token.address === null) return true;
+  // Known token symbol
+  if (KNOWN_TOKEN_SYMBOLS.has(t.token.symbol.toUpperCase())) return true;
+  // Vault share token (from the useVaults cache)
+  if (findVaultByAddress(vaults, t.chainId, t.token.address)) return true;
+  // Counterparty is a vault contract (e.g. direct deposit)
+  if (findVaultByAddress(vaults, t.chainId, t.counterparty)) return true;
+  return false;
+}
+
+
 function classify(group: ActivityGroup, vaults: Vault[]): Classification {
   const transfers = group.transfers;
   const chainName = CHAIN_NAMES[group.chainId] ?? `Chain ${group.chainId}`;
@@ -224,7 +266,17 @@ export function RecentActivity({ records, loading, error }: RecentActivityProps)
     );
   }
 
-  if (records.length === 0) {
+  // Filter out groups that have no recognizable transfers. Also strip
+  // unrecognized transfers *inside* each group so the classifier never
+  // picks a spam row as the "primary" display transfer.
+  const visibleGroups = records
+    .map((g) => ({
+      ...g,
+      transfers: g.transfers.filter((t) => isRecognizedTransfer(t, vaults)),
+    }))
+    .filter((g) => g.transfers.length > 0);
+
+  if (visibleGroups.length === 0) {
     return (
       <div className="mx-5 text-center text-sm text-sprout-text-muted py-6">
         No activity yet. Your deposits and transfers will show up here.
@@ -238,7 +290,7 @@ export function RecentActivity({ records, loading, error }: RecentActivityProps)
         Recent Activity
       </h3>
       <div className="flex flex-col gap-2">
-        {records.map((group) => {
+        {visibleGroups.map((group) => {
           const { kind, label, subLabel, primary } = classify(group, vaults);
           const badge = kindBadge(kind);
 

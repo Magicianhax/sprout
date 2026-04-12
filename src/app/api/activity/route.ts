@@ -13,8 +13,45 @@ const ALCHEMY_API_KEY = process.env.ALCHEMY_API_KEY;
 // We fetch up to 20 transfers per chain per direction; 5 chains × 2
 // directions = 10 upstream calls per request. Grouped results are
 // capped to MAX_GROUPS so the response stays small.
-const PER_DIRECTION_MAX = 20;
+const PER_DIRECTION_MAX = 30;
 const MAX_GROUPS = 25;
+
+// Cheap server-side spam filter. Anything that passes still gets the
+// stricter client-side whitelist check in RecentActivity (known tokens
+// or known vaults), but dropping obvious spam here keeps the payload
+// small and classification lookups honest.
+const SPAM_SYMBOL_MARKERS = [
+  "http",
+  "www",
+  ".com",
+  ".io",
+  ".net",
+  ".xyz",
+  ".app",
+  ".me",
+  ".club",
+  ".finance",
+  ".top",
+  "visit ",
+  "claim ",
+  "reward",
+  "airdrop",
+  "giveaway",
+  "$ ",
+  " $",
+];
+
+function looksLikeSpamSymbol(symbol: string | null): boolean {
+  if (!symbol) return true;
+  const trimmed = symbol.trim();
+  if (!trimmed) return true;
+  if (trimmed.length > 20) return true;
+  const lower = trimmed.toLowerCase();
+  for (const marker of SPAM_SYMBOL_MARKERS) {
+    if (lower.includes(marker)) return true;
+  }
+  return false;
+}
 
 interface AlchemyTransfer {
   hash: string;
@@ -121,6 +158,13 @@ function normalize(
   if (!timestamp) return null;
 
   const isNative = transfer.category === "external";
+
+  // Spam filter — skip tokens whose symbol looks like an airdrop.
+  // Native transfers don't have a symbol from Alchemy so they're exempt.
+  if (!isNative && looksLikeSpamSymbol(transfer.asset)) {
+    return null;
+  }
+
   const decimals = isNative
     ? 18
     : parseInt(transfer.rawContract.decimal ?? "0x12", 16);
