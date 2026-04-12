@@ -14,6 +14,7 @@ import { useVaults } from "@/lib/hooks/useVaults";
 import { useWithdrawFlow } from "@/lib/hooks/useWithdrawFlow";
 import { fetchVaults } from "@/lib/api/earn";
 import { TransactionModal } from "@/components/deposit/TransactionModal";
+import { PoweredByLifi } from "@/components/ui/PoweredByLifi";
 import {
   formatPercent,
   formatCompactCurrency,
@@ -342,6 +343,8 @@ function VaultDetailContent({ vault, chainId }: { vault: Vault; chainId: number 
             Start Earning
           </Button>
         )}
+
+        <PoweredByLifi className="pt-4 pb-2" />
       </div>
 
       <TransactionModal

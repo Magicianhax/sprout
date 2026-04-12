@@ -9,6 +9,8 @@ import { Header } from "@/components/layout/Header";
 import { BottomNav } from "@/components/layout/BottomNav";
 import { Card } from "@/components/ui/Card";
 import { Toggle } from "@/components/ui/Toggle";
+import { PoweredByLifi } from "@/components/ui/PoweredByLifi";
+import { AboutModal } from "@/components/settings/AboutModal";
 import { usePreferences } from "@/lib/hooks/usePreferences";
 
 function truncateAddress(address: string): string {
@@ -23,6 +25,7 @@ function SettingsContent() {
 
   const [copied, setCopied] = useState(false);
   const [notificationsError, setNotificationsError] = useState<string | null>(null);
+  const [aboutOpen, setAboutOpen] = useState(false);
 
   const walletAddress = user?.wallet?.address ?? "";
   const email = user?.email?.address ?? "";
@@ -222,7 +225,7 @@ function SettingsContent() {
         <Card shadow="subtle">
           <button
             className="flex items-center justify-between w-full cursor-pointer"
-            onClick={() => {}}
+            onClick={() => setAboutOpen(true)}
           >
             <p className="text-sm font-semibold text-sprout-text-primary">
               About Sprout
@@ -241,7 +244,10 @@ function SettingsContent() {
         </button>
       </div>
 
+      <PoweredByLifi className="pb-5" />
       <BottomNav />
+
+      <AboutModal open={aboutOpen} onClose={() => setAboutOpen(false)} />
     </main>
   );
 }
