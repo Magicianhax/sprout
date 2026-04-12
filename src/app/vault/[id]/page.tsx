@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useRouter, useParams, useSearchParams } from "next/navigation";
 import { usePrivy } from "@privy-io/react-auth";
 import { ArrowLeft, ExternalLink, Info } from "lucide-react";
@@ -10,6 +10,7 @@ import { Button } from "@/components/ui/Button";
 import { TokenIcon } from "@/components/ui/TokenIcon";
 import { AuthGuard } from "@/components/layout/AuthGuard";
 import { usePositions } from "@/lib/hooks/usePositions";
+import { useVaults } from "@/lib/hooks/useVaults";
 import { fetchVaults } from "@/lib/api/earn";
 import {
   formatPercent,
@@ -359,20 +360,38 @@ function VaultDetailLoader() {
   const vaultAddress = params.id;
   const chainId = Number(searchParams.get("chainId") ?? 0);
 
-  const [vault, setVault] = useState<Vault | null>(null);
-  const [loading, setLoading] = useState(true);
+  // Reuse the shared vault cache — if home page already loaded, this is free.
+  const { vaults: cachedVaults, loading: cacheLoading } = useVaults();
+
+  const cachedVault = useMemo(() => {
+    if (!vaultAddress) return null;
+    return (
+      cachedVaults.find(
+        (v) =>
+          v.address.toLowerCase() === vaultAddress.toLowerCase() &&
+          (!chainId || v.chainId === chainId)
+      ) ?? null
+    );
+  }, [cachedVaults, vaultAddress, chainId]);
+
+  const [fallbackVault, setFallbackVault] = useState<Vault | null>(null);
+  const [fallbackLoading, setFallbackLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  // Only hit the network if the vault isn't in the shared cache once the
+  // cache has finished loading. This happens when users deep-link directly
+  // to a vault they haven't browsed to.
   useEffect(() => {
     if (!vaultAddress) return;
+    if (cachedVault) return;
+    if (cacheLoading) return;
 
     let cancelled = false;
 
     async function loadVault() {
-      setLoading(true);
+      setFallbackLoading(true);
       setError(null);
       try {
-        // Paginate through results to find the specific vault
         let found: Vault | undefined;
         let cursor: string | undefined;
 
@@ -394,10 +413,11 @@ function VaultDetailLoader() {
           if (!cursor) break;
         }
 
+        if (cancelled) return;
         if (!found) {
           setError("Vault not found.");
         } else {
-          setVault(found);
+          setFallbackVault(found);
         }
       } catch (err) {
         if (!cancelled) {
@@ -406,7 +426,7 @@ function VaultDetailLoader() {
           );
         }
       } finally {
-        if (!cancelled) setLoading(false);
+        if (!cancelled) setFallbackLoading(false);
       }
     }
 
@@ -415,7 +435,10 @@ function VaultDetailLoader() {
     return () => {
       cancelled = true;
     };
-  }, [vaultAddress, chainId]);
+  }, [vaultAddress, chainId, cachedVault, cacheLoading]);
+
+  const vault = cachedVault ?? fallbackVault;
+  const loading = !vault && (cacheLoading || fallbackLoading);
 
   if (loading) {
     return (
