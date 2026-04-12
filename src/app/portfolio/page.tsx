@@ -1,12 +1,16 @@
 "use client";
 
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { usePrivy } from "@privy-io/react-auth";
+import { History } from "lucide-react";
 import { AuthGuard } from "@/components/layout/AuthGuard";
 import { Header } from "@/components/layout/Header";
 import { BottomNav } from "@/components/layout/BottomNav";
 import { PositionCard } from "@/components/portfolio/PositionCard";
 import { WalletBalanceCard } from "@/components/portfolio/WalletBalanceCard";
+import { WalletActionBar } from "@/components/portfolio/WalletActionBar";
+import { ActivityDrawer } from "@/components/portfolio/ActivityDrawer";
 import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
 import { PositionCardSkeleton, WalletBalanceCardSkeleton } from "@/components/ui/CardSkeletons";
@@ -33,23 +37,60 @@ function PortfolioContent() {
   const loading = positionsLoading || balancesLoading;
 
   const withdraw = useWithdrawFlow();
+  const [activityOpen, setActivityOpen] = useState(false);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    if (window.location.hash !== "#earning") return;
+    const el = document.getElementById("earning");
+    if (!el) return;
+    const t = window.setTimeout(() => {
+      el.scrollIntoView({ behavior: "smooth", block: "start" });
+    }, 100);
+    return () => window.clearTimeout(t);
+  }, [loading, hasPositions]);
 
   return (
     <main className="min-h-dvh bg-sprout-gradient pb-28">
       <Header />
 
       {/* Portfolio header */}
-      <div className="px-5 pt-5 pb-4">
-        <p className="font-heading text-2xl font-800 text-sprout-text-primary">Portfolio</p>
-        {hasPositions && !loading && (
-          <p className="text-sm text-sprout-text-muted mt-1">
-            <span className="font-semibold text-sprout-green-dark">
-              {formatCurrency(totalBalance)}
-            </span>{" "}
-            earning
+      <div className="flex items-start justify-between gap-3 px-5 pt-5 pb-4">
+        <div className="min-w-0">
+          <p className="font-heading text-2xl font-800 text-sprout-text-primary">
+            Portfolio
           </p>
+          {hasPositions && !loading && (
+            <p className="text-sm text-sprout-text-muted mt-1">
+              <span className="font-semibold text-sprout-green-dark">
+                {formatCurrency(totalBalance)}
+              </span>{" "}
+              earning
+            </p>
+          )}
+        </div>
+        {isPro && (
+          <button
+            type="button"
+            onClick={() => setActivityOpen(true)}
+            className="shrink-0 inline-flex items-center gap-1.5 bg-sprout-card border border-sprout-border rounded-pill px-3 py-1.5 shadow-subtle text-xs font-semibold text-sprout-text-primary cursor-pointer"
+            aria-label="Open recent activity"
+          >
+            <History size={14} strokeWidth={2.25} />
+            Activity
+          </button>
         )}
       </div>
+
+      {address && (
+        <div className="mb-5">
+          <WalletActionBar
+            variant="full"
+            walletAddress={address}
+            hasEarningPositions={!loading && hasPositions}
+          />
+        </div>
+      )}
 
       {loading && (
         <div className="flex flex-col gap-6">
@@ -110,7 +151,7 @@ function PortfolioContent() {
 
           {/* Earning section */}
           {hasPositions && (
-            <section className="mb-6">
+            <section id="earning" className="mb-6 scroll-mt-4">
               <div className="flex items-center gap-2 px-5 mb-3">
                 <span className="w-2 h-2 rounded-full bg-sprout-green-primary" />
                 <h2 className="text-xs font-bold uppercase tracking-wide text-sprout-text-secondary">
@@ -154,6 +195,12 @@ function PortfolioContent() {
 
       <PoweredByLifi className="pb-5" />
       <BottomNav />
+
+      <ActivityDrawer
+        open={activityOpen}
+        onClose={() => setActivityOpen(false)}
+        positions={positions}
+      />
 
       <TransactionModal
         status={withdraw.modalStatus}

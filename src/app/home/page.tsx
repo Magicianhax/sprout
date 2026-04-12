@@ -345,13 +345,7 @@ function ProHome() {
         </>
       )}
 
-      {positions.length > 0 && (
-        <div className="mt-8">
-          <RecentActivity positions={positions} />
-        </div>
-      )}
-
-      <PoweredByLifi className="pt-6 pb-5" />
+      <PoweredByLifi className="pb-5" />
       <BottomNav />
     </main>
   );
