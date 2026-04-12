@@ -2,7 +2,14 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { ArrowDownToLine, ArrowUpFromLine, Sprout, MinusCircle } from "lucide-react";
+import {
+  ArrowDownToLine,
+  ArrowUpFromLine,
+  Check,
+  Copy,
+  MinusCircle,
+  Sprout,
+} from "lucide-react";
 import { Card } from "@/components/ui/Card";
 import { ReceiveModal } from "@/components/portfolio/ReceiveModal";
 import { SendModal } from "@/components/portfolio/SendModal";
@@ -60,9 +67,21 @@ export function WalletActionBar({
   const router = useRouter();
   const [receiveOpen, setReceiveOpen] = useState(false);
   const [sendOpen, setSendOpen] = useState(false);
+  const [copied, setCopied] = useState(false);
   const { balances } = useBalances(walletAddress);
 
   if (!walletAddress) return null;
+
+  async function copyAddress(e: React.MouseEvent) {
+    e.stopPropagation();
+    try {
+      await navigator.clipboard.writeText(walletAddress);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1800);
+    } catch {
+      // clipboard unavailable
+    }
+  }
 
   function goWithdraw() {
     router.push("/portfolio#earning");
@@ -103,15 +122,38 @@ export function WalletActionBar({
         </Card>
       ) : (
         <Card shadow="subtle" className="mx-5 !p-4">
-          <div className="flex items-center justify-between mb-3 px-1">
+          <div className="flex items-center justify-between mb-3 px-1 gap-3">
             <div className="min-w-0">
               <p className="text-[10px] font-bold uppercase tracking-wider text-sprout-text-muted">
                 Your wallet
               </p>
-              <p className="text-sm font-mono font-semibold text-sprout-text-primary mt-0.5">
-                {truncateAddress(walletAddress)}
-              </p>
+              <button
+                type="button"
+                onClick={copyAddress}
+                className="mt-0.5 inline-flex items-center gap-1.5 text-sm font-mono font-semibold text-sprout-text-primary cursor-pointer group"
+                aria-label="Copy wallet address"
+              >
+                <span>{truncateAddress(walletAddress)}</span>
+                {copied ? (
+                  <Check
+                    size={14}
+                    strokeWidth={2.5}
+                    className="text-sprout-green-dark"
+                  />
+                ) : (
+                  <Copy
+                    size={14}
+                    strokeWidth={2.25}
+                    className="text-sprout-text-muted group-hover:text-sprout-green-dark transition-colors"
+                  />
+                )}
+              </button>
             </div>
+            {copied && (
+              <span className="text-[11px] font-semibold text-sprout-green-dark shrink-0">
+                Copied!
+              </span>
+            )}
           </div>
           {actions}
         </Card>
