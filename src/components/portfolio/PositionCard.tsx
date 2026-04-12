@@ -1,22 +1,87 @@
 "use client";
 
-import { Card } from "@/components/ui/Card";
-import { TokenIcon } from "@/components/ui/TokenIcon";
-import { formatCurrency } from "@/lib/format";
-import { CHAIN_NAMES } from "@/lib/constants";
-import type { Position } from "@/lib/types";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
+import { Card } from "@/components/ui/Card";
+import { Badge } from "@/components/ui/Badge";
+import { TokenIcon } from "@/components/ui/TokenIcon";
+import { formatCurrency, formatPercent } from "@/lib/format";
+import { CHAIN_NAMES } from "@/lib/constants";
+import { fetchVaults } from "@/lib/api/earn";
+import type { Position } from "@/lib/types";
 
 interface PositionCardProps {
   position: Position;
   showDetails: boolean;
 }
 
-export function PositionCard({ position, showDetails }: PositionCardProps) {
+// Protocol display name mapping for cleaner display
+const PROTOCOL_DISPLAY_NAMES: Record<string, string> = {
+  "aave-v3": "Aave V3",
+  "morpho-v1": "Morpho",
+  "morpho-v2": "Morpho V2",
+  "euler-v2": "Euler V2",
+  "pendle": "Pendle",
+  "lido-wsteth": "Lido",
+  "ether.fi-stake": "EtherFi",
+  "ether.fi-liquid": "EtherFi Liquid",
+  "ethena-usde": "Ethena",
+  "felix-vanilla": "Felix",
+  "hyperlend": "HyperLend",
+  "maple": "Maple",
+  "neverland": "Neverland",
+  "usdai": "USDai",
+  "seamless": "Seamless",
+  "kinetiq": "Kinetiq",
+  "upshift": "Upshift",
+  "yo-protocol": "YO Protocol",
+};
+
+function displayProtocol(name: string): string {
+  return PROTOCOL_DISPLAY_NAMES[name] ?? name;
+}
+
+export function PositionCard({ position }: PositionCardProps) {
   const router = useRouter();
   const { asset, protocolName, chainId, balanceUsd, balanceNative } = position;
   const chainName = CHAIN_NAMES[chainId] ?? `Chain ${chainId}`;
   const balanceUsdNum = parseFloat(balanceUsd || "0");
+  const balanceNativeNum = parseFloat(balanceNative || "0");
+
+  const [apy, setApy] = useState<number | null>(null);
+
+  // Fetch APY for this position's vault
+  useEffect(() => {
+    let cancelled = false;
+
+    fetchVaults({
+      chainId,
+      asset: asset.symbol,
+      sortBy: "tvl",
+      limit: 50,
+    })
+      .then((res) => {
+        if (cancelled) return;
+        // Find the vault matching this protocol
+        const vault = res.data.find(
+          (v) =>
+            v.protocol.name === protocolName &&
+            v.underlyingTokens.some(
+              (t) => t.address.toLowerCase() === asset.address.toLowerCase()
+            )
+        );
+        if (vault) {
+          setApy(vault.analytics.apy.total);
+        }
+      })
+      .catch(() => {
+        // silent
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [chainId, asset.symbol, asset.address, protocolName]);
 
   function handleStopEarning(e: React.MouseEvent) {
     e.stopPropagation();
@@ -31,45 +96,50 @@ export function PositionCard({ position, showDetails }: PositionCardProps) {
     router.push(`/withdraw?${params.toString()}`);
   }
 
-  // Positions API doesn't return vault address, so no vault detail navigation
-  const handleClick = undefined;
-
   return (
-    <Card onClick={handleClick} shadow="subtle" className="mx-5">
-      <div className="flex items-center gap-3">
-        <div className="shrink-0">
+    <Card shadow="subtle" className="mx-5">
+      <div className="flex items-start gap-3">
+        {/* Token icon with chain badge */}
+        <div className="relative shrink-0">
           <TokenIcon type="token" identifier={asset.symbol} size={44} />
+          <div
+            className="absolute -bottom-1 -right-1 rounded-full border-2 border-white overflow-hidden"
+            style={{ width: 18, height: 18 }}
+          >
+            <TokenIcon type="chain" identifier={chainId} size={18} />
+          </div>
         </div>
 
+        {/* Token info */}
         <div className="flex-1 min-w-0">
           <p className="font-semibold text-sprout-text-primary text-[15px] truncate leading-tight">
             {asset.symbol}
           </p>
-          {showDetails && (
-            <p className="text-xs text-sprout-text-muted mt-0.5 truncate">
-              {protocolName} · {chainName}
-            </p>
-          )}
+          <p className="text-xs text-sprout-text-muted mt-0.5 truncate">
+            {displayProtocol(protocolName)} · {chainName}
+          </p>
         </div>
 
+        {/* Balance */}
         <div className="text-right shrink-0">
-          <p className="font-heading text-sm font-700 text-sprout-text-primary">
+          <p className="font-heading text-base font-800 text-sprout-text-primary">
             {formatCurrency(balanceUsdNum)}
           </p>
-          <p className="text-[11px] text-sprout-text-muted">
-            {parseFloat(balanceNative || "0").toFixed(4)} {asset.symbol}
+          <p className="text-[11px] text-sprout-text-muted mt-0.5">
+            {balanceNativeNum.toFixed(4)} {asset.symbol}
           </p>
         </div>
       </div>
 
+      {/* APY + Stop Earning row */}
       <div className="flex items-center justify-between mt-3 pt-3 border-t border-sprout-border">
-        {showDetails && (
-          <div className="flex items-center gap-1.5">
-            <TokenIcon type="chain" identifier={chainId} size={16} className="rounded-full" />
-            <span className="text-xs text-sprout-text-muted">{chainName}</span>
-          </div>
-        )}
-        {!showDetails && <div />}
+        <div className="flex items-center gap-1.5">
+          {apy !== null ? (
+            <Badge color="green">{formatPercent(apy)} yearly</Badge>
+          ) : (
+            <span className="text-xs text-sprout-text-muted">Earning yield</span>
+          )}
+        </div>
 
         <button
           className="text-xs font-semibold text-sprout-red-stop cursor-pointer py-1 px-2"
