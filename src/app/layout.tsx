@@ -18,7 +18,13 @@ export const viewport: Viewport = {
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="en">
+    <html lang="en" suppressHydrationWarning>
+      <head>
+        {/* Static theme-init script served from /public — applies the
+            dark class before React hydrates so the first paint matches
+            the saved preference (no flash of light mode). */}
+        <script src="/theme-init.js" async={false} />
+      </head>
       <body className="font-body bg-sprout-gradient min-h-dvh">
         <PrivyProvider>
           <ThemeSync />

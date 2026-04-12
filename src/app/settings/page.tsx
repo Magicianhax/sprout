@@ -61,7 +61,6 @@ function SettingsContent() {
       update({ notificationsEnabled: true });
       new Notification("Sprout notifications enabled", {
         body: "We'll ping you when your yield hits new milestones.",
-        icon: "/icon-192.png",
       });
     } catch (err) {
       setNotificationsError(

@@ -43,6 +43,7 @@ body {
    color tokens so every component that reads them flips automatically,
    plus a few targeted gradient + surface fixes. */
 html.dark {
+  color-scheme: dark;
   --color-sprout-text-primary: #F3F4F6;
   --color-sprout-text-secondary: #D1D5DB;
   --color-sprout-text-muted: #9CA3AF;
@@ -52,23 +53,45 @@ html.dark {
   --color-sprout-amber-warm: #3F2E1A;
 }
 
+html.dark,
 html.dark body {
   background-color: #0F172A;
+  color: var(--color-sprout-text-primary);
 }
 
 html.dark .bg-sprout-gradient {
-  background: linear-gradient(180deg, #0F172A 0%, #111827 40%, #0B1220 100%);
+  background: linear-gradient(180deg, #0F172A 0%, #111827 40%, #0B1220 100%) !important;
 }
 
+/* Override common hard-coded surfaces used throughout the app */
 html.dark .bg-white {
-  background-color: var(--color-sprout-card);
+  background-color: #1F2937 !important;
 }
 
-html.dark .border-sprout-border {
-  border-color: var(--color-sprout-border);
+html.dark .bg-gray-50,
+html.dark .bg-gray-100 {
+  background-color: #374151 !important;
 }
 
-html.dark .bg-gray-100,
 html.dark .bg-gray-200 {
-  background-color: #374151;
+  background-color: #4B5563 !important;
 }
+
+html.dark .border-sprout-border,
+html.dark .border-gray-100,
+html.dark .border-gray-200 {
+  border-color: #374151 !important;
+}
+
+/* Pastel tint cards in the vault detail page */
+html.dark .bg-green-50 { background-color: #064E3B !important; }
+html.dark .bg-amber-50 { background-color: #3F2E1A !important; }
+html.dark .bg-blue-50  { background-color: #1E3A5F !important; }
+html.dark .bg-purple-50 { background-color: #3B2F5B !important; }
+html.dark .bg-red-50   { background-color: #3F1D1D !important; }
+
+html.dark .text-green-700, html.dark .text-green-800 { color: #6EE7B7 !important; }
+html.dark .text-amber-700, html.dark .text-amber-800 { color: #FCD34D !important; }
+html.dark .text-blue-700,  html.dark .text-blue-800  { color: #93C5FD !important; }
+html.dark .text-purple-700, html.dark .text-purple-800 { color: #C4B5FD !important; }
+html.dark .text-red-600 { color: #FCA5A5 !important; }
