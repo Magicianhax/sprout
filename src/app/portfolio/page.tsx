@@ -10,9 +10,11 @@ import { WalletBalanceCard } from "@/components/portfolio/WalletBalanceCard";
 import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
 import { PositionCardSkeleton, WalletBalanceCardSkeleton } from "@/components/ui/CardSkeletons";
+import { TransactionModal } from "@/components/deposit/TransactionModal";
 import { usePreferences } from "@/lib/hooks/usePreferences";
 import { usePositions } from "@/lib/hooks/usePositions";
 import { useBalances } from "@/lib/hooks/useBalances";
+import { useWithdrawFlow } from "@/lib/hooks/useWithdrawFlow";
 import { formatCurrency } from "@/lib/format";
 
 function PortfolioContent() {
@@ -28,6 +30,8 @@ function PortfolioContent() {
   const nonEarning = balances.filter((b) => b.balanceFormatted > 0);
   const hasWallet = nonEarning.length > 0;
   const loading = positionsLoading || balancesLoading;
+
+  const withdraw = useWithdrawFlow();
 
   return (
     <main className="min-h-dvh bg-sprout-gradient pb-28">
@@ -121,6 +125,7 @@ function PortfolioContent() {
                     key={`${position.chainId}-${position.asset.address}-${position.protocolName}-${i}`}
                     position={position}
                     showDetails={isPro}
+                    onStopEarning={withdraw.start}
                   />
                 ))}
               </div>
@@ -147,6 +152,18 @@ function PortfolioContent() {
       )}
 
       <BottomNav />
+
+      <TransactionModal
+        status={withdraw.modalStatus}
+        txHash={withdraw.state.txHash}
+        chainId={withdraw.state.position?.chainId}
+        errorMessage={withdraw.state.errorMessage}
+        onClose={() => {
+          withdraw.close();
+          reload();
+        }}
+        onRetry={withdraw.retry}
+      />
     </main>
   );
 }

@@ -1,7 +1,6 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { useRouter } from "next/navigation";
 import { Card } from "@/components/ui/Card";
 import { Badge } from "@/components/ui/Badge";
 import { TokenIcon } from "@/components/ui/TokenIcon";
@@ -14,10 +13,10 @@ import type { Position } from "@/lib/types";
 interface PositionCardProps {
   position: Position;
   showDetails: boolean;
+  onStopEarning: (position: Position) => void;
 }
 
-export function PositionCard({ position }: PositionCardProps) {
-  const router = useRouter();
+export function PositionCard({ position, onStopEarning }: PositionCardProps) {
   const { asset, protocolName, chainId, balanceUsd, balanceNative } = position;
   const chainName = CHAIN_NAMES[chainId] ?? `Chain ${chainId}`;
   const balanceUsdNum = parseFloat(balanceUsd || "0");
@@ -60,15 +59,7 @@ export function PositionCard({ position }: PositionCardProps) {
 
   function handleStopEarning(e: React.MouseEvent) {
     e.stopPropagation();
-    const params = new URLSearchParams({
-      vault: asset.address,
-      chainId: String(chainId),
-      protocolName,
-      asset: asset.address,
-      assetSymbol: asset.symbol,
-      assetDecimals: String(asset.decimals),
-    });
-    router.push(`/withdraw?${params.toString()}`);
+    onStopEarning(position);
   }
 
   return (

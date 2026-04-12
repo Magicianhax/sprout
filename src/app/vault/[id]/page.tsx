@@ -11,7 +11,9 @@ import { TokenIcon } from "@/components/ui/TokenIcon";
 import { AuthGuard } from "@/components/layout/AuthGuard";
 import { usePositions } from "@/lib/hooks/usePositions";
 import { useVaults } from "@/lib/hooks/useVaults";
+import { useWithdrawFlow } from "@/lib/hooks/useWithdrawFlow";
 import { fetchVaults } from "@/lib/api/earn";
+import { TransactionModal } from "@/components/deposit/TransactionModal";
 import {
   formatPercent,
   formatCompactCurrency,
@@ -107,7 +109,8 @@ function VaultDetailContent({ vault, chainId }: { vault: Vault; chainId: number 
   const router = useRouter();
   const { user } = usePrivy();
   const address = user?.wallet?.address;
-  const { positions } = usePositions(address);
+  const { positions, reload: reloadPositions } = usePositions(address);
+  const withdraw = useWithdrawFlow();
 
   const token = vault.underlyingTokens[0];
   const apy = vault.analytics.apy.total;
@@ -128,16 +131,8 @@ function VaultDetailContent({ vault, chainId }: { vault: Vault; chainId: number 
   }
 
   function handleStopEarning() {
-    const token = vault.underlyingTokens[0];
-    const params = new URLSearchParams({
-      vault: vault.address,
-      chainId: String(vault.chainId),
-      protocolName: vault.protocol.name,
-      asset: token?.address ?? "",
-      assetSymbol: token?.symbol ?? "",
-      assetDecimals: String(token?.decimals ?? 18),
-    });
-    router.push(`/withdraw?${params.toString()}`);
+    if (!userPosition) return;
+    void withdraw.start(userPosition);
   }
 
   return (
@@ -348,6 +343,18 @@ function VaultDetailContent({ vault, chainId }: { vault: Vault; chainId: number 
           </Button>
         )}
       </div>
+
+      <TransactionModal
+        status={withdraw.modalStatus}
+        txHash={withdraw.state.txHash}
+        chainId={withdraw.state.position?.chainId}
+        errorMessage={withdraw.state.errorMessage}
+        onClose={() => {
+          withdraw.close();
+          reloadPositions();
+        }}
+        onRetry={withdraw.retry}
+      />
     </main>
   );
 }
