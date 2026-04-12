@@ -1,13 +1,6 @@
 "use client";
 
-import {
-  ArrowDownLeft,
-  ArrowLeftRight,
-  ArrowUpRight,
-  ExternalLink,
-  MoveUp,
-  Sprout,
-} from "lucide-react";
+import { ExternalLink } from "lucide-react";
 import { TokenIcon } from "@/components/ui/TokenIcon";
 import { CHAIN_NAMES } from "@/lib/constants";
 import { displayProtocol } from "@/lib/protocols";
@@ -33,6 +26,7 @@ interface Classification {
   label: string;
   subLabel: string;
   primary: WalletTransfer;
+  vault?: Vault;
 }
 
 function formatAmount(amount: string, decimals: number): string {
@@ -135,6 +129,7 @@ function classify(group: ActivityGroup, vaults: Vault[]): Classification {
           label: `Deposited into ${displayProtocol(vaultByToken.protocol.name)}`,
           subLabel: chainName,
           primary: underlying,
+          vault: vaultByToken,
         };
       }
       // shares burned from user → withdraw
@@ -145,6 +140,7 @@ function classify(group: ActivityGroup, vaults: Vault[]): Classification {
         label: `Withdrew from ${displayProtocol(vaultByToken.protocol.name)}`,
         subLabel: chainName,
         primary: underlying,
+        vault: vaultByToken,
       };
     }
 
@@ -161,6 +157,7 @@ function classify(group: ActivityGroup, vaults: Vault[]): Classification {
           label: `Deposited into ${displayProtocol(vaultByCounter.protocol.name)}`,
           subLabel: chainName,
           primary: t,
+          vault: vaultByCounter,
         };
       }
       return {
@@ -168,6 +165,7 @@ function classify(group: ActivityGroup, vaults: Vault[]): Classification {
         label: `Withdrew from ${displayProtocol(vaultByCounter.protocol.name)}`,
         subLabel: chainName,
         primary: t,
+        vault: vaultByCounter,
       };
     }
   }
@@ -209,42 +207,6 @@ function classify(group: ActivityGroup, vaults: Vault[]): Classification {
     subLabel: chainName,
     primary: inc,
   };
-}
-
-function kindBadge(kind: ActivityKind) {
-  switch (kind) {
-    case "deposit":
-      return {
-        icon: <Sprout size={14} strokeWidth={2.5} />,
-        className: "bg-sprout-green-primary text-white",
-      };
-    case "withdraw":
-      return {
-        icon: <MoveUp size={14} strokeWidth={2.5} />,
-        className: "bg-sprout-red-stop text-white",
-      };
-    case "bridge":
-      return {
-        icon: <ArrowLeftRight size={14} strokeWidth={2.5} />,
-        className: "bg-blue-500 text-white",
-      };
-    case "swap":
-      return {
-        icon: <ArrowLeftRight size={14} strokeWidth={2.5} />,
-        className: "bg-purple-500 text-white",
-      };
-    case "receive":
-      return {
-        icon: <ArrowDownLeft size={14} strokeWidth={2.5} />,
-        className: "bg-emerald-500 text-white",
-      };
-    case "send":
-    default:
-      return {
-        icon: <ArrowUpRight size={14} strokeWidth={2.5} />,
-        className: "bg-gray-500 text-white",
-      };
-  }
 }
 
 export function RecentActivity({ records, loading, error }: RecentActivityProps) {
@@ -291,8 +253,10 @@ export function RecentActivity({ records, loading, error }: RecentActivityProps)
       </h3>
       <div className="flex flex-col gap-2">
         {visibleGroups.map((group) => {
-          const { kind, label, subLabel, primary } = classify(group, vaults);
-          const badge = kindBadge(kind);
+          const { kind, label, subLabel, primary, vault } = classify(
+            group,
+            vaults
+          );
 
           const amount = formatAmount(primary.amount, primary.token.decimals);
           const amountPrefix =
@@ -307,26 +271,44 @@ export function RecentActivity({ records, loading, error }: RecentActivityProps)
               ? "text-sprout-green-dark"
               : "text-sprout-text-primary";
 
+          // Chain badge overlay bottom-right of the token icon — matches
+          // VaultCard/PositionCard. Kind is conveyed by the label verb
+          // and the amount color, so we don't double up with another
+          // overlay badge.
           const content = (
             <div className="flex items-center gap-3 bg-sprout-card rounded-2xl px-4 py-3 shadow-subtle">
               <div className="relative shrink-0">
                 <TokenIcon
                   type="token"
                   identifier={primary.token.symbol}
-                  size={36}
+                  size={38}
                 />
                 <div
-                  className={`absolute -bottom-1 -right-1 w-[18px] h-[18px] rounded-full border-2 border-sprout-card flex items-center justify-center ${badge.className}`}
-                  aria-hidden="true"
+                  className="absolute -bottom-1 -right-1 rounded-full border-2 border-sprout-card overflow-hidden"
+                  style={{ width: 16, height: 16 }}
+                  aria-label={CHAIN_NAMES[group.chainId] ?? `Chain ${group.chainId}`}
                 >
-                  {badge.icon}
+                  <TokenIcon
+                    type="chain"
+                    identifier={group.chainId}
+                    size={16}
+                  />
                 </div>
               </div>
 
               <div className="flex-1 min-w-0">
-                <p className="text-sm font-semibold text-sprout-text-primary truncate">
-                  {label}
-                </p>
+                <div className="flex items-center gap-1.5 min-w-0">
+                  {vault && (
+                    <TokenIcon
+                      type="protocol"
+                      identifier={vault.protocol.name}
+                      size={14}
+                    />
+                  )}
+                  <p className="text-sm font-semibold text-sprout-text-primary truncate">
+                    {label}
+                  </p>
+                </div>
                 <p className="text-[11px] text-sprout-text-muted truncate">
                   {subLabel} · {formatRelativeTime(group.timestamp)}
                 </p>
