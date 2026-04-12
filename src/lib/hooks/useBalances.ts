@@ -25,7 +25,19 @@ export function useBalances(address: string | undefined) {
       .then((res) => (res.ok ? res.json() : { balances: [] }))
       .then((data: { balances?: TokenBalance[] }) => {
         if (!cancelled) {
-          setBalances(data.balances ?? []);
+          const newBalances = data.balances ?? [];
+          // Merge with previous balances — if a token was in the previous
+          // response but missing from the new one (RPC flake), keep the old
+          // value instead of losing it.
+          setBalances((prev) => {
+            if (prev.length === 0) return newBalances;
+            const merged = new Map<string, TokenBalance>();
+            for (const b of prev) merged.set(`${b.symbol}-${b.chainId}`, b);
+            for (const b of newBalances) merged.set(`${b.symbol}-${b.chainId}`, b);
+            return Array.from(merged.values()).sort(
+              (a, b) => b.balanceFormatted - a.balanceFormatted,
+            );
+          });
           setLoading(false);
         }
       })
