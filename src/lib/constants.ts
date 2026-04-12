@@ -72,6 +72,76 @@ export const RISK_TAG_MAP: Record<string, "low" | "medium" | "high"> = {
 export const EARN_API_BASE = "https://earn.li.fi";
 export const LIFI_API_BASE = "https://li.quest";
 
+// Alchemy network slugs for each supported chain. Used by the activity
+// proxy to query alchemy_getAssetTransfers per chain.
+export const ALCHEMY_NETWORK_BY_CHAIN: Record<number, string> = {
+  1: "eth-mainnet",
+  8453: "base-mainnet",
+  42161: "arb-mainnet",
+  10: "opt-mainnet",
+  137: "polygon-mainnet",
+};
+
+export const NATIVE_SYMBOL_BY_CHAIN: Record<number, string> = {
+  1: "ETH",
+  8453: "ETH",
+  42161: "ETH",
+  10: "ETH",
+  137: "POL",
+};
+
+export const EXPLORER_TX_URL_BY_CHAIN: Record<number, string> = {
+  1: "https://etherscan.io/tx/",
+  8453: "https://basescan.org/tx/",
+  42161: "https://arbiscan.io/tx/",
+  10: "https://optimistic.etherscan.io/tx/",
+  137: "https://polygonscan.com/tx/",
+};
+
+// Pagination / streaming
+export const VAULT_PAGE_SIZE = 100;
+export const VAULT_MAX_PAGES = 10;
+export const HOME_PAGE_SIZE = 10;
+
+// Timing
+export const QUOTE_DEBOUNCE_MS = 600;
+export const POSITION_RESYNC_DELAYS_MS = [4000, 12000, 30000] as const;
+export const API_FETCH_TIMEOUT_MS = 15000;
+export const RPC_FETCH_TIMEOUT_MS = 10000;
+
+// Safety caps for swap/bridge parameters forwarded to LI.FI
+export const MAX_SLIPPAGE = 0.03; // 3% hard cap
+export const DEFAULT_SLIPPAGE = 0.005; // 0.5% when client omits it
+
+// Allowlists for the earn API proxy (see /api/earn/[...path]/route.ts)
+export const EARN_API_PATH_ALLOWLIST: readonly RegExp[] = [
+  /^v1\/earn\/vaults$/,
+  /^v1\/earn\/chains$/,
+  /^v1\/earn\/protocols$/,
+  /^v1\/earn\/portfolio\/0x[0-9a-fA-F]{40}\/positions$/,
+] as const;
+
+export const EARN_API_QUERY_ALLOWLIST = new Set([
+  "chainId",
+  "asset",
+  "sortBy",
+  "limit",
+  "cursor",
+] as const);
+
+// Allowlists for the quote proxy (see /api/quote/route.ts)
+export const QUOTE_API_QUERY_ALLOWLIST = new Set([
+  "fromChain",
+  "toChain",
+  "fromToken",
+  "toToken",
+  "fromAmount",
+  "fromAddress",
+  "toAddress",
+  "slippage",
+  "order",
+] as const);
+
 export const DEFAULT_PREFERENCES = {
   mode: "lite" as const,
   riskLevel: "low" as const,

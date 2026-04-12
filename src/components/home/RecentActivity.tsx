@@ -1,6 +1,7 @@
 "use client";
 
 import {
+  ArrowDownLeft,
   ArrowLeftRight,
   ArrowUpRight,
   ExternalLink,
@@ -11,31 +12,38 @@ import { TokenIcon } from "@/components/ui/TokenIcon";
 import { CHAIN_NAMES } from "@/lib/constants";
 import { displayProtocol } from "@/lib/protocols";
 import { useVaults } from "@/lib/hooks/useVaults";
-import type { TransferRecord, TransferSide, Vault } from "@/lib/types";
+import type { ActivityGroup, Vault, WalletTransfer } from "@/lib/types";
 
 interface RecentActivityProps {
-  records: TransferRecord[];
+  records: ActivityGroup[];
   loading?: boolean;
   error?: string | null;
 }
 
-type ActivityKind = "deposit" | "withdraw" | "bridge" | "swap" | "send";
+type ActivityKind =
+  | "deposit"
+  | "withdraw"
+  | "swap"
+  | "bridge"
+  | "send"
+  | "receive";
 
 interface Classification {
   kind: ActivityKind;
   label: string;
   subLabel: string;
+  primary: WalletTransfer;
 }
 
-function formatAmount(side: TransferSide): string {
+function formatAmount(amount: string, decimals: number): string {
   try {
-    const decimals = side.token.decimals ?? 18;
-    const big = BigInt(side.amount);
+    const big = BigInt(amount);
     const divisor = BigInt(10) ** BigInt(decimals);
     const whole = big / divisor;
     const frac = big % divisor;
-    const fracStr = (Number(frac) / Number(divisor)).toFixed(4).slice(2);
-    return `${whole.toString()}.${fracStr}`;
+    // 4 significant fractional digits
+    const fracScaled = (Number(frac) / Number(divisor)).toFixed(4).slice(2);
+    return `${whole.toString()}.${fracScaled}`;
   } catch {
     return "—";
   }
@@ -52,78 +60,112 @@ function formatRelativeTime(unixSeconds: number): string {
   return date.toLocaleDateString(undefined, { month: "short", day: "numeric" });
 }
 
-function findVault(
+function findVaultByAddress(
   vaults: Vault[],
   chainId: number,
-  tokenAddress: string
+  address: string | null
 ): Vault | undefined {
-  const target = tokenAddress.toLowerCase();
+  if (!address) return undefined;
+  const target = address.toLowerCase();
   return vaults.find(
-    (v) =>
-      v.chainId === chainId && v.address.toLowerCase() === target
+    (v) => v.chainId === chainId && v.address.toLowerCase() === target
   );
 }
 
-function classify(record: TransferRecord, vaults: Vault[]): Classification {
-  const send = record.sending;
-  const recv = record.receiving;
-  const sendChain = CHAIN_NAMES[send.chainId] ?? `Chain ${send.chainId}`;
+function classify(group: ActivityGroup, vaults: Vault[]): Classification {
+  const transfers = group.transfers;
+  const chainName = CHAIN_NAMES[group.chainId] ?? `Chain ${group.chainId}`;
 
-  if (!recv) {
+  // --- Detect vault interactions ---
+  // A deposit shows up as: outflow of underlying + inflow of share token.
+  // A withdraw shows up as: outflow of share token + inflow of underlying.
+  // Either side is enough to identify the vault.
+  for (const t of transfers) {
+    // Match by token (share token itself is the vault address)
+    const vaultByToken = findVaultByAddress(vaults, t.chainId, t.token.address);
+    if (vaultByToken) {
+      if (t.direction === "in") {
+        // shares minted to user → deposit
+        const underlying =
+          transfers.find((x) => x.direction === "out" && x !== t) ?? t;
+        return {
+          kind: "deposit",
+          label: `Deposited into ${displayProtocol(vaultByToken.protocol.name)}`,
+          subLabel: chainName,
+          primary: underlying,
+        };
+      }
+      // shares burned from user → withdraw
+      const underlying =
+        transfers.find((x) => x.direction === "in" && x !== t) ?? t;
+      return {
+        kind: "withdraw",
+        label: `Withdrew from ${displayProtocol(vaultByToken.protocol.name)}`,
+        subLabel: chainName,
+        primary: underlying,
+      };
+    }
+
+    // Match by counterparty (direct interaction with vault contract)
+    const vaultByCounter = findVaultByAddress(
+      vaults,
+      t.chainId,
+      t.counterparty
+    );
+    if (vaultByCounter) {
+      if (t.direction === "out") {
+        return {
+          kind: "deposit",
+          label: `Deposited into ${displayProtocol(vaultByCounter.protocol.name)}`,
+          subLabel: chainName,
+          primary: t,
+        };
+      }
+      return {
+        kind: "withdraw",
+        label: `Withdrew from ${displayProtocol(vaultByCounter.protocol.name)}`,
+        subLabel: chainName,
+        primary: t,
+      };
+    }
+  }
+
+  // --- Not a vault tx ---
+  // If the group has both an outflow and an inflow of different tokens,
+  // it's a swap (same chain) or looks like one. Otherwise it's a plain
+  // send/receive.
+  const outs = transfers.filter((t) => t.direction === "out");
+  const ins = transfers.filter((t) => t.direction === "in");
+
+  if (outs.length > 0 && ins.length > 0) {
+    const out = outs[0];
+    const inc = ins[0];
+    if (out.token.symbol !== inc.token.symbol) {
+      return {
+        kind: "swap",
+        label: `${out.token.symbol} → ${inc.token.symbol}`,
+        subLabel: chainName,
+        primary: out,
+      };
+    }
+  }
+
+  if (outs.length > 0) {
+    const out = outs[0];
     return {
       kind: "send",
-      label: `Sent ${send.token.symbol}`,
-      subLabel: sendChain,
+      label: `Sent ${out.token.symbol}`,
+      subLabel: chainName,
+      primary: out,
     };
   }
 
-  const recvChain = CHAIN_NAMES[recv.chainId] ?? `Chain ${recv.chainId}`;
-  const sameChain = send.chainId === recv.chainId;
-  const sameToken =
-    send.token.address.toLowerCase() === recv.token.address.toLowerCase();
-
-  // Deposit — user sent something, received a vault share token.
-  const receivedVault = findVault(vaults, recv.chainId, recv.token.address);
-  if (receivedVault) {
-    return {
-      kind: "deposit",
-      label: `Deposited into ${displayProtocol(receivedVault.protocol.name)}`,
-      subLabel: sameChain ? recvChain : `${sendChain} → ${recvChain}`,
-    };
-  }
-
-  // Withdraw via composer (rare — our ERC4626 path skips LI.FI) — user sent
-  // a vault share, received the underlying.
-  const sentVault = findVault(vaults, send.chainId, send.token.address);
-  if (sentVault) {
-    return {
-      kind: "withdraw",
-      label: `Withdrew from ${displayProtocol(sentVault.protocol.name)}`,
-      subLabel: sameChain ? sendChain : `${sendChain} → ${recvChain}`,
-    };
-  }
-
-  if (sameChain && sameToken) {
-    return {
-      kind: "send",
-      label: `Sent ${send.token.symbol}`,
-      subLabel: sendChain,
-    };
-  }
-
-  if (!sameChain && sameToken) {
-    return {
-      kind: "bridge",
-      label: `Bridged ${send.token.symbol}`,
-      subLabel: `${sendChain} → ${recvChain}`,
-    };
-  }
-
-  // Different tokens — swap (same chain) or cross-chain swap
+  const inc = ins[0] ?? transfers[0];
   return {
-    kind: "swap",
-    label: `${send.token.symbol} → ${recv.token.symbol}`,
-    subLabel: sameChain ? sendChain : `${sendChain} → ${recvChain}`,
+    kind: "receive",
+    label: `Received ${inc.token.symbol}`,
+    subLabel: chainName,
+    primary: inc,
   };
 }
 
@@ -149,6 +191,11 @@ function kindBadge(kind: ActivityKind) {
         icon: <ArrowLeftRight size={14} strokeWidth={2.5} />,
         className: "bg-purple-500 text-white",
       };
+    case "receive":
+      return {
+        icon: <ArrowDownLeft size={14} strokeWidth={2.5} />,
+        className: "bg-emerald-500 text-white",
+      };
     case "send":
     default:
       return {
@@ -159,10 +206,6 @@ function kindBadge(kind: ActivityKind) {
 }
 
 export function RecentActivity({ records, loading, error }: RecentActivityProps) {
-  // Read from the shared vault cache so we can label vault interactions.
-  // No cost if useVaults has already been called elsewhere — this just
-  // subscribes to the stream. If it hasn't been called, this triggers
-  // the load and the labels will upgrade themselves as vaults land.
   const { vaults } = useVaults();
 
   if (loading) {
@@ -195,38 +238,29 @@ export function RecentActivity({ records, loading, error }: RecentActivityProps)
         Recent Activity
       </h3>
       <div className="flex flex-col gap-2">
-        {records.map((record) => {
-          const send = record.sending;
-          const recv = record.receiving;
-          const link = (recv?.txLink ?? send.txLink) || undefined;
-          const { kind, label, subLabel } = classify(record, vaults);
+        {records.map((group) => {
+          const { kind, label, subLabel, primary } = classify(group, vaults);
           const badge = kindBadge(kind);
 
-          // For deposits we show what went in (sending side)
-          // For withdraws we show what came out (receiving side)
-          // For everything else we show sending
-          const amountSide = kind === "withdraw" && recv ? recv : send;
-          const amount = formatAmount(amountSide);
-          const usd = amountSide.amountUSD
-            ? `$${Number(amountSide.amountUSD).toFixed(2)}`
-            : null;
-          const amountSymbol = amountSide.token.symbol;
+          const amount = formatAmount(primary.amount, primary.token.decimals);
           const amountPrefix =
-            kind === "deposit"
+            kind === "deposit" || kind === "send" || kind === "swap"
               ? "-"
-              : kind === "withdraw"
+              : kind === "withdraw" || kind === "receive"
               ? "+"
-              : kind === "send"
-              ? "-"
               : "";
+
+          const amountTone =
+            kind === "withdraw" || kind === "receive"
+              ? "text-sprout-green-dark"
+              : "text-sprout-text-primary";
 
           const content = (
             <div className="flex items-center gap-3 bg-sprout-card rounded-2xl px-4 py-3 shadow-subtle">
-              {/* Token icon with the kind badge overlay */}
               <div className="relative shrink-0">
                 <TokenIcon
                   type="token"
-                  identifier={amountSide.token.symbol}
+                  identifier={primary.token.symbol}
                   size={36}
                 />
                 <div
@@ -242,49 +276,34 @@ export function RecentActivity({ records, loading, error }: RecentActivityProps)
                   {label}
                 </p>
                 <p className="text-[11px] text-sprout-text-muted truncate">
-                  {subLabel} · {formatRelativeTime(send.timestamp)}
+                  {subLabel} · {formatRelativeTime(group.timestamp)}
                 </p>
               </div>
 
               <div className="text-right shrink-0">
-                <p
-                  className={`text-sm font-bold ${
-                    kind === "withdraw"
-                      ? "text-sprout-green-dark"
-                      : kind === "deposit" || kind === "send"
-                      ? "text-sprout-text-primary"
-                      : "text-sprout-text-primary"
-                  }`}
-                >
+                <p className={`text-sm font-bold ${amountTone}`}>
                   {amountPrefix}
-                  {amount} {amountSymbol}
+                  {amount} {primary.token.symbol}
                 </p>
-                {usd && (
-                  <p className="text-[11px] text-sprout-text-muted">{usd}</p>
-                )}
               </div>
 
-              {link && (
-                <ExternalLink
-                  size={14}
-                  className="text-sprout-text-muted shrink-0"
-                />
-              )}
+              <ExternalLink
+                size={14}
+                className="text-sprout-text-muted shrink-0"
+              />
             </div>
           );
 
-          return link ? (
+          return (
             <a
-              key={record.transactionId}
-              href={link}
+              key={group.id}
+              href={group.explorerUrl}
               target="_blank"
               rel="noopener noreferrer"
               className="block"
             >
               {content}
             </a>
-          ) : (
-            <div key={record.transactionId}>{content}</div>
           );
         })}
       </div>

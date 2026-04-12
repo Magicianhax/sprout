@@ -96,32 +96,34 @@ export interface ComposerQuote {
 export type RiskLevel = "low" | "medium" | "high";
 export type SortBy = "tvl" | "apy";
 
-// Shape returned by li.quest /v2/analytics/transfers — only the fields
-// we consume are modeled; upstream may include many more.
-export interface TransferSide {
-  txHash: string;
-  txLink?: string;
+// Wallet activity feed — backed by alchemy_getAssetTransfers. Each
+// transaction (grouped by hash) can contain multiple transfers (e.g.
+// a vault deposit is USDC out + shares in, same tx). Classification
+// happens client-side against the useVaults cache so we can label
+// deposits / withdrawals with the protocol name.
+export interface WalletTransfer {
+  hash: string;
   chainId: number;
-  amount: string;
-  amountUSD?: string;
-  timestamp: number;
+  direction: "in" | "out";
   token: {
-    address: string;
-    chainId: number;
+    address: string | null; // null for native chain token
     symbol: string;
     decimals: number;
-    name?: string;
-    logoURI?: string;
-    priceUSD?: string;
   };
+  amount: string; // raw base units as decimal string
+  counterparty: string;
+  timestamp: number; // unix seconds
 }
 
-export interface TransferRecord {
-  transactionId: string;
-  sending: TransferSide;
-  receiving?: TransferSide;
+export interface ActivityGroup {
+  id: string;
+  chainId: number;
+  hash: string;
+  timestamp: number;
+  explorerUrl: string;
+  transfers: WalletTransfer[];
 }
 
-export interface TransferHistoryResponse {
-  data: TransferRecord[];
+export interface ActivityResponse {
+  data: ActivityGroup[];
 }
