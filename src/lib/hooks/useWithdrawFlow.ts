@@ -6,6 +6,10 @@ import { getWithdrawQuote } from "@/lib/api/composer";
 import { fetchVaults } from "@/lib/api/earn";
 import { toTokenUnits } from "@/lib/format";
 import { useVaults } from "@/lib/hooks/useVaults";
+import {
+  invalidatePositions,
+  optimisticallyRemovePosition,
+} from "@/lib/hooks/usePositions";
 import type { ComposerQuote, Position, Vault } from "@/lib/types";
 
 // Protocols whose vault address is an ERC4626 share token. For these
@@ -62,6 +66,29 @@ const INITIAL: FlowState = {
   txHash: "",
   errorMessage: "",
 };
+
+// On successful withdrawal: remove the position from the shared cache
+// immediately so the UI updates without waiting for the earn indexer,
+// and schedule a few background reloads to confirm once the indexer
+// catches up (takes ~5-30 s depending on chain).
+function markWithdrawn(position: Position, walletAddress: string) {
+  optimisticallyRemovePosition(
+    walletAddress,
+    position.chainId,
+    position.asset.address,
+    position.protocolName
+  );
+  // Background re-sync — fire and forget. Each attempt overwrites the
+  // cache with whatever the indexer returns.
+  const delays = [4000, 12000, 30000];
+  for (const ms of delays) {
+    setTimeout(() => {
+      invalidatePositions(walletAddress).catch(() => {
+        /* swallow — the optimistic state is already correct */
+      });
+    }, ms);
+  }
+}
 
 function matchVault(position: Position, vault: Vault): boolean {
   return (
@@ -178,6 +205,7 @@ export function useWithdrawFlow() {
             ],
           })) as string;
 
+          markWithdrawn(position, wallet.address);
           setState((s) => ({ ...s, phase: "success", txHash: hash }));
           return;
         }
@@ -218,6 +246,7 @@ export function useWithdrawFlow() {
           ],
         });
 
+        markWithdrawn(position, wallet.address);
         setState((s) => ({ ...s, phase: "success", txHash: hash as string }));
       } catch (err) {
         const message = err instanceof Error ? err.message : "Withdrawal failed";
