@@ -140,6 +140,16 @@ html.dark .text-blue-700,  html.dark .text-blue-800   { color: #93C5FD !importan
 html.dark .text-purple-700, html.dark .text-purple-800 { color: #C4B5FD !important; }
 html.dark .text-red-600 { color: #FCA5A5 !important; }
 
+/* Hard-coded neutral greys used in a few components (badges, modal
+   copy) — rescue them in dark mode so text isn't black-on-black.
+   Light theme is untouched. */
+html.dark .text-gray-400 { color: #8FA89A !important; }
+html.dark .text-gray-500 { color: #A3BDB0 !important; }
+html.dark .text-gray-600 { color: #C6D7CE !important; }
+html.dark .text-gray-700 { color: #DCE8E1 !important; }
+html.dark .text-gray-800 { color: #ECFDF5 !important; }
+html.dark .text-gray-900 { color: #ECFDF5 !important; }
+
 /* Inputs and other neutral surfaces that use inline hex or utility
    classes we can't retroactively refactor */
 html.dark input::placeholder {

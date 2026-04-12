@@ -97,19 +97,26 @@ export function TransactionModal({
                 <span className="text-4xl sprout-breathe" aria-hidden="true">🌱</span>
               </div>
 
-              <h2 className="font-heading text-xl font-bold text-gray-800 mb-2">
+              <h2 className="font-heading text-xl font-bold text-sprout-text-primary mb-2">
                 Confirming your deposit…
               </h2>
-              <p className="text-sm text-gray-500 mb-6">
+              <p className="text-sm text-sprout-text-muted mb-6">
                 Please approve in your wallet
               </p>
 
               {/* Animated dots */}
-              <div className="flex items-center gap-2" aria-label="Loading">
+              <div className="flex items-center gap-2 mb-6" aria-label="Loading">
                 <span className="w-2.5 h-2.5 rounded-full bg-green-500 dot-1" />
                 <span className="w-2.5 h-2.5 rounded-full bg-green-500 dot-2" />
                 <span className="w-2.5 h-2.5 rounded-full bg-green-500 dot-3" />
               </div>
+
+              <button
+                onClick={onClose}
+                className="px-4 py-2 text-sm font-semibold text-sprout-text-secondary hover:text-sprout-text-primary transition-colors cursor-pointer"
+              >
+                Cancel
+              </button>
             </>
           )}
 
@@ -132,7 +139,7 @@ export function TransactionModal({
                 </svg>
               </div>
 
-              <h2 className="font-heading text-xl font-bold text-gray-800 mb-1">
+              <h2 className="font-heading text-xl font-bold text-sprout-text-primary mb-1">
                 Your money is growing! 🌱
               </h2>
 
@@ -154,7 +161,7 @@ export function TransactionModal({
                 Back to Home
               </button>
 
-              <p className="mt-5 text-[11px] text-gray-400">Powered by LI.FI</p>
+              <p className="mt-5 text-[11px] text-sprout-text-muted">Powered by LI.FI</p>
             </>
           )}
 
@@ -178,7 +185,7 @@ export function TransactionModal({
                 </svg>
               </div>
 
-              <h2 className="font-heading text-xl font-bold text-gray-800 mb-2">
+              <h2 className="font-heading text-xl font-bold text-sprout-text-primary mb-2">
                 Something went wrong
               </h2>
 
@@ -196,7 +203,7 @@ export function TransactionModal({
                   Try Again
                 </button>
                 <button
-                  onClick={onRetry}
+                  onClick={onClose}
                   className="w-full px-6 py-3 text-sm font-semibold text-sprout-text-secondary hover:text-sprout-text-primary transition-colors cursor-pointer"
                 >
                   Close
