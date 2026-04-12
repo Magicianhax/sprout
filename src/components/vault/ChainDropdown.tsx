@@ -64,9 +64,12 @@ export function ChainDropdown({ selected, onChange }: ChainDropdownProps) {
         />
       </button>
 
-      {/* Dropdown panel */}
+      {/* Dropdown panel — anchors to the trigger's right edge and
+          opens leftward so it never overflows the viewport on narrow
+          screens where ChainDropdown is typically the rightmost
+          filter in the row. */}
       {open && (
-        <div className="absolute left-0 top-full mt-2 bg-white border border-sprout-border rounded-2xl shadow-card p-3 min-w-[200px] z-50">
+        <div className="absolute right-0 top-full mt-2 bg-white border border-sprout-border rounded-2xl shadow-card p-3 min-w-[200px] z-50">
           <div className="flex flex-col gap-1 mb-3">
             {SUPPORTED_CHAIN_IDS.map((chainId) => {
               const checked = draft.includes(chainId);

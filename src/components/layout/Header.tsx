@@ -41,49 +41,54 @@ export function Header() {
   }
 
   return (
-    <header className="flex justify-between items-center px-5 pt-4 pb-1">
-      <button
-        type="button"
-        onClick={() => router.push("/home")}
-        className="font-heading text-xl font-800 text-sprout-green-dark cursor-pointer leading-none"
-        aria-label="Home"
-      >
-        sprout
-      </button>
-
-      <div className="flex items-center gap-2">
+    <>
+      <header className="fixed top-0 left-0 right-0 z-40 flex justify-between items-center px-5 pt-4 pb-3 bg-sprout-card/80 backdrop-blur-md border-b border-sprout-border/50">
         <button
           type="button"
-          onClick={toggleMode}
-          className="relative flex items-center bg-sprout-card border border-sprout-border rounded-pill p-0.5 shadow-subtle cursor-pointer"
-          aria-label={`Switch to ${isPro ? "Lite" : "Pro"} mode`}
+          onClick={() => router.push("/home")}
+          className="font-heading text-xl font-800 text-sprout-green-dark cursor-pointer leading-none"
+          aria-label="Home"
         >
-          <span
-            className={`px-2.5 py-0.5 rounded-pill text-[11px] font-bold transition-colors ${
-              !isPro ? "bg-sprout-green-primary text-white" : "text-sprout-text-muted"
-            }`}
-          >
-            LITE
-          </span>
-          <span
-            className={`px-2.5 py-0.5 rounded-pill text-[11px] font-bold transition-colors ${
-              isPro ? "bg-sprout-green-primary text-white" : "text-sprout-text-muted"
-            }`}
-          >
-            PRO
-          </span>
+          sprout
         </button>
 
-        <button
-          type="button"
-          onClick={() => router.push("/settings")}
-          className="w-9 h-9 rounded-full flex items-center justify-center text-white font-bold text-sm shadow-subtle border-2 border-sprout-card cursor-pointer"
-          style={{ background: gradient }}
-          aria-label="Account settings"
-        >
-          {initial}
-        </button>
-      </div>
-    </header>
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={toggleMode}
+            className="relative flex items-center bg-sprout-card border border-sprout-border rounded-pill p-0.5 shadow-subtle cursor-pointer"
+            aria-label={`Switch to ${isPro ? "Lite" : "Pro"} mode`}
+          >
+            <span
+              className={`px-2.5 py-0.5 rounded-pill text-[11px] font-bold transition-colors ${
+                !isPro ? "bg-sprout-green-primary text-white" : "text-sprout-text-muted"
+              }`}
+            >
+              LITE
+            </span>
+            <span
+              className={`px-2.5 py-0.5 rounded-pill text-[11px] font-bold transition-colors ${
+                isPro ? "bg-sprout-green-primary text-white" : "text-sprout-text-muted"
+              }`}
+            >
+              PRO
+            </span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => router.push("/settings")}
+            className="w-9 h-9 rounded-full flex items-center justify-center text-white font-bold text-sm shadow-subtle border-2 border-sprout-card cursor-pointer"
+            style={{ background: gradient }}
+            aria-label="Account settings"
+          >
+            {initial}
+          </button>
+        </div>
+      </header>
+      {/* Spacer so content inside each page flows below the fixed header
+          without every page needing its own top padding. */}
+      <div className="h-[64px]" aria-hidden="true" />
+    </>
   );
 }
