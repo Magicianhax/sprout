@@ -55,9 +55,9 @@ function PortfolioContent() {
         </Card>
       ) : hasPositions ? (
         <div className="flex flex-col gap-3">
-          {positions.map((position) => (
+          {positions.map((position, i) => (
             <PositionCard
-              key={`${position.chainId}-${position.asset.address}`}
+              key={`${position.chainId}-${position.asset.address}-${position.protocolName}-${i}`}
               position={position}
               showDetails={isPro}
             />

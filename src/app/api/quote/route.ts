@@ -17,15 +17,28 @@ export async function GET(request: NextRequest) {
   }
 
   const composerUrl = `${COMPOSER_BASE}/v1/quote?${searchParams.toString()}`;
-  const res = await fetch(composerUrl, {
-    headers: { "x-lifi-api-key": LIFI_API_KEY },
-  });
 
-  if (!res.ok) {
-    const errorBody = await res.text();
-    return Response.json({ message: "Failed to get quote", details: errorBody }, { status: res.status });
+  try {
+    const res = await fetch(composerUrl, {
+      headers: { "x-lifi-api-key": LIFI_API_KEY },
+      signal: AbortSignal.timeout(15000),
+    });
+
+    if (!res.ok) {
+      let errorMessage = "Failed to get quote";
+      try {
+        const errorJson = await res.json();
+        errorMessage = errorJson.message ?? errorMessage;
+      } catch {
+        // body wasn't JSON
+      }
+      return Response.json({ message: errorMessage }, { status: res.status });
+    }
+
+    const data = await res.json();
+    return Response.json(data);
+  } catch (err) {
+    const message = err instanceof Error ? err.message : "Network error fetching quote";
+    return Response.json({ message }, { status: 502 });
   }
-
-  const data = await res.json();
-  return Response.json(data);
 }
