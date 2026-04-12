@@ -1,7 +1,7 @@
 "use client";
 
 import { usePathname, useRouter } from "next/navigation";
-import { Home, PieChart, Settings, Compass } from "lucide-react";
+import { Home, PieChart, Settings, Compass, History } from "lucide-react";
 import { usePreferences } from "@/lib/hooks/usePreferences";
 
 export function BottomNav() {
@@ -16,6 +16,9 @@ export function BottomNav() {
   const tabs = [
     { label: homeLabel, icon: HomeIcon, path: "/home" },
     { label: "Portfolio", icon: PieChart, path: "/portfolio" },
+    ...(isPro
+      ? [{ label: "Activity", icon: History, path: "/activity" }]
+      : []),
     { label: "Settings", icon: Settings, path: "/settings" },
   ];
 
@@ -29,8 +32,18 @@ export function BottomNav() {
             onClick={() => router.push(tab.path)}
             className="flex-1 flex flex-col items-center gap-1 cursor-pointer"
           >
-            <tab.icon size={24} className={isActive ? "text-sprout-green-primary" : "text-gray-300"} strokeWidth={isActive ? 2.5 : 2} />
-            <span className={`text-[10px] ${isActive ? "text-sprout-green-primary font-bold" : "text-sprout-text-muted"}`}>
+            <tab.icon
+              size={24}
+              className={isActive ? "text-sprout-green-primary" : "text-gray-300"}
+              strokeWidth={isActive ? 2.5 : 2}
+            />
+            <span
+              className={`text-[10px] ${
+                isActive
+                  ? "text-sprout-green-primary font-bold"
+                  : "text-sprout-text-muted"
+              }`}
+            >
               {tab.label}
             </span>
           </button>
