@@ -3,6 +3,7 @@ import { Badge } from "@/components/ui/Badge";
 import { TokenIcon } from "@/components/ui/TokenIcon";
 import { formatPercent, formatCompactCurrency, parseTvl, getRiskLevel } from "@/lib/format";
 import { CHAIN_NAMES } from "@/lib/constants";
+import { displayProtocol } from "@/lib/protocols";
 import type { Vault } from "@/lib/types";
 
 interface VaultCardProps {
@@ -32,8 +33,8 @@ export function VaultCard({ vault, onClick }: VaultCardProps) {
   return (
     <Card onClick={onClick} shadow="subtle" className="mx-5">
       <div className="flex items-center gap-3">
-        {/* Token icon */}
-        <div className="shrink-0">
+        {/* Token icon with chain badge */}
+        <div className="relative shrink-0">
           {token ? (
             <TokenIcon type="token" identifier={token.symbol} size={44} />
           ) : (
@@ -41,6 +42,13 @@ export function VaultCard({ vault, onClick }: VaultCardProps) {
               ?
             </div>
           )}
+          <div
+            className="absolute -bottom-1 -right-1 rounded-full border-2 border-white overflow-hidden"
+            style={{ width: 18, height: 18 }}
+            title={chainName}
+          >
+            <TokenIcon type="chain" identifier={vault.chainId} size={18} />
+          </div>
         </div>
 
         {/* Vault info */}
@@ -48,9 +56,12 @@ export function VaultCard({ vault, onClick }: VaultCardProps) {
           <p className="font-semibold text-sprout-text-primary text-[15px] truncate leading-tight">
             {vault.name}
           </p>
-          <p className="text-xs text-sprout-text-muted mt-0.5 truncate">
-            {vault.protocol.name} · {chainName}
-          </p>
+          <div className="flex items-center gap-1.5 mt-1">
+            <TokenIcon type="protocol" identifier={vault.protocol.name} size={14} />
+            <span className="text-xs text-sprout-text-muted truncate">
+              {displayProtocol(vault.protocol.name)}
+            </span>
+          </div>
         </div>
 
         {/* APY */}
