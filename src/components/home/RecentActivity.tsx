@@ -1,14 +1,30 @@
 "use client";
 
-import { ArrowRight, ExternalLink } from "lucide-react";
+import {
+  ArrowLeftRight,
+  ArrowUpRight,
+  ExternalLink,
+  MoveUp,
+  Sprout,
+} from "lucide-react";
 import { TokenIcon } from "@/components/ui/TokenIcon";
 import { CHAIN_NAMES } from "@/lib/constants";
-import type { TransferRecord, TransferSide } from "@/lib/types";
+import { displayProtocol } from "@/lib/protocols";
+import { useVaults } from "@/lib/hooks/useVaults";
+import type { TransferRecord, TransferSide, Vault } from "@/lib/types";
 
 interface RecentActivityProps {
   records: TransferRecord[];
   loading?: boolean;
   error?: string | null;
+}
+
+type ActivityKind = "deposit" | "withdraw" | "bridge" | "swap" | "send";
+
+interface Classification {
+  kind: ActivityKind;
+  label: string;
+  subLabel: string;
 }
 
 function formatAmount(side: TransferSide): string {
@@ -36,7 +52,119 @@ function formatRelativeTime(unixSeconds: number): string {
   return date.toLocaleDateString(undefined, { month: "short", day: "numeric" });
 }
 
+function findVault(
+  vaults: Vault[],
+  chainId: number,
+  tokenAddress: string
+): Vault | undefined {
+  const target = tokenAddress.toLowerCase();
+  return vaults.find(
+    (v) =>
+      v.chainId === chainId && v.address.toLowerCase() === target
+  );
+}
+
+function classify(record: TransferRecord, vaults: Vault[]): Classification {
+  const send = record.sending;
+  const recv = record.receiving;
+  const sendChain = CHAIN_NAMES[send.chainId] ?? `Chain ${send.chainId}`;
+
+  if (!recv) {
+    return {
+      kind: "send",
+      label: `Sent ${send.token.symbol}`,
+      subLabel: sendChain,
+    };
+  }
+
+  const recvChain = CHAIN_NAMES[recv.chainId] ?? `Chain ${recv.chainId}`;
+  const sameChain = send.chainId === recv.chainId;
+  const sameToken =
+    send.token.address.toLowerCase() === recv.token.address.toLowerCase();
+
+  // Deposit — user sent something, received a vault share token.
+  const receivedVault = findVault(vaults, recv.chainId, recv.token.address);
+  if (receivedVault) {
+    return {
+      kind: "deposit",
+      label: `Deposited into ${displayProtocol(receivedVault.protocol.name)}`,
+      subLabel: sameChain ? recvChain : `${sendChain} → ${recvChain}`,
+    };
+  }
+
+  // Withdraw via composer (rare — our ERC4626 path skips LI.FI) — user sent
+  // a vault share, received the underlying.
+  const sentVault = findVault(vaults, send.chainId, send.token.address);
+  if (sentVault) {
+    return {
+      kind: "withdraw",
+      label: `Withdrew from ${displayProtocol(sentVault.protocol.name)}`,
+      subLabel: sameChain ? sendChain : `${sendChain} → ${recvChain}`,
+    };
+  }
+
+  if (sameChain && sameToken) {
+    return {
+      kind: "send",
+      label: `Sent ${send.token.symbol}`,
+      subLabel: sendChain,
+    };
+  }
+
+  if (!sameChain && sameToken) {
+    return {
+      kind: "bridge",
+      label: `Bridged ${send.token.symbol}`,
+      subLabel: `${sendChain} → ${recvChain}`,
+    };
+  }
+
+  // Different tokens — swap (same chain) or cross-chain swap
+  return {
+    kind: "swap",
+    label: `${send.token.symbol} → ${recv.token.symbol}`,
+    subLabel: sameChain ? sendChain : `${sendChain} → ${recvChain}`,
+  };
+}
+
+function kindBadge(kind: ActivityKind) {
+  switch (kind) {
+    case "deposit":
+      return {
+        icon: <Sprout size={14} strokeWidth={2.5} />,
+        className: "bg-sprout-green-primary text-white",
+      };
+    case "withdraw":
+      return {
+        icon: <MoveUp size={14} strokeWidth={2.5} />,
+        className: "bg-sprout-red-stop text-white",
+      };
+    case "bridge":
+      return {
+        icon: <ArrowLeftRight size={14} strokeWidth={2.5} />,
+        className: "bg-blue-500 text-white",
+      };
+    case "swap":
+      return {
+        icon: <ArrowLeftRight size={14} strokeWidth={2.5} />,
+        className: "bg-purple-500 text-white",
+      };
+    case "send":
+    default:
+      return {
+        icon: <ArrowUpRight size={14} strokeWidth={2.5} />,
+        className: "bg-gray-500 text-white",
+      };
+  }
+}
+
 export function RecentActivity({ records, loading, error }: RecentActivityProps) {
+  // Read from the shared vault cache so we can label vault interactions.
+  // No cost if useVaults has already been called elsewhere — this just
+  // subscribes to the stream. If it hasn't been called, this triggers
+  // the load and the labels will upgrade themselves as vaults land.
+  const { vaults } = useVaults();
+
   if (loading) {
     return (
       <div className="mx-5 text-sm text-sprout-text-muted animate-pulse">
@@ -70,55 +198,66 @@ export function RecentActivity({ records, loading, error }: RecentActivityProps)
         {records.map((record) => {
           const send = record.sending;
           const recv = record.receiving;
-          const crossChain = Boolean(recv && recv.chainId !== send.chainId);
           const link = (recv?.txLink ?? send.txLink) || undefined;
-          const sendChainName =
-            CHAIN_NAMES[send.chainId] ?? `Chain ${send.chainId}`;
-          const recvChainName =
-            recv && (CHAIN_NAMES[recv.chainId] ?? `Chain ${recv.chainId}`);
-          const amount = formatAmount(send);
-          const usd = send.amountUSD
-            ? `$${Number(send.amountUSD).toFixed(2)}`
+          const { kind, label, subLabel } = classify(record, vaults);
+          const badge = kindBadge(kind);
+
+          // For deposits we show what went in (sending side)
+          // For withdraws we show what came out (receiving side)
+          // For everything else we show sending
+          const amountSide = kind === "withdraw" && recv ? recv : send;
+          const amount = formatAmount(amountSide);
+          const usd = amountSide.amountUSD
+            ? `$${Number(amountSide.amountUSD).toFixed(2)}`
             : null;
-          const label = crossChain
-            ? `${send.token.symbol} → ${recv?.token.symbol ?? "?"}`
-            : `Sent ${send.token.symbol}`;
-          const subLabel = crossChain
-            ? `${sendChainName} → ${recvChainName}`
-            : sendChainName;
+          const amountSymbol = amountSide.token.symbol;
+          const amountPrefix =
+            kind === "deposit"
+              ? "-"
+              : kind === "withdraw"
+              ? "+"
+              : kind === "send"
+              ? "-"
+              : "";
 
           const content = (
             <div className="flex items-center gap-3 bg-sprout-card rounded-2xl px-4 py-3 shadow-subtle">
+              {/* Token icon with the kind badge overlay */}
               <div className="relative shrink-0">
-                <TokenIcon type="token" identifier={send.token.symbol} size={36} />
+                <TokenIcon
+                  type="token"
+                  identifier={amountSide.token.symbol}
+                  size={36}
+                />
                 <div
-                  className="absolute -bottom-1 -right-1 rounded-full border-2 border-sprout-card overflow-hidden"
-                  style={{ width: 16, height: 16 }}
+                  className={`absolute -bottom-1 -right-1 w-[18px] h-[18px] rounded-full border-2 border-sprout-card flex items-center justify-center ${badge.className}`}
+                  aria-hidden="true"
                 >
-                  <TokenIcon type="chain" identifier={send.chainId} size={16} />
+                  {badge.icon}
                 </div>
               </div>
 
               <div className="flex-1 min-w-0">
-                <div className="flex items-center gap-1.5">
-                  <p className="text-sm font-semibold text-sprout-text-primary truncate">
-                    {label}
-                  </p>
-                  {crossChain && (
-                    <ArrowRight
-                      size={12}
-                      className="text-sprout-text-muted shrink-0"
-                    />
-                  )}
-                </div>
+                <p className="text-sm font-semibold text-sprout-text-primary truncate">
+                  {label}
+                </p>
                 <p className="text-[11px] text-sprout-text-muted truncate">
                   {subLabel} · {formatRelativeTime(send.timestamp)}
                 </p>
               </div>
 
               <div className="text-right shrink-0">
-                <p className="text-sm font-bold text-sprout-text-primary">
-                  {amount} {send.token.symbol}
+                <p
+                  className={`text-sm font-bold ${
+                    kind === "withdraw"
+                      ? "text-sprout-green-dark"
+                      : kind === "deposit" || kind === "send"
+                      ? "text-sprout-text-primary"
+                      : "text-sprout-text-primary"
+                  }`}
+                >
+                  {amountPrefix}
+                  {amount} {amountSymbol}
                 </p>
                 {usd && (
                   <p className="text-[11px] text-sprout-text-muted">{usd}</p>
