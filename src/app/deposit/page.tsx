@@ -174,15 +174,16 @@ function DepositPageContent() {
     try {
       const { transactionRequest } = quote;
 
-      // Switch wallet to the correct chain if needed
-      await wallet.switchChain(transactionRequest.chainId);
+      // Switch wallet to the source chain (fromChain) for the quote
+      await wallet.switchChain(tokenSelection.chainId);
 
-      // Get the provider and send transaction
+      // Get the provider and send transaction — use wallet.address to ensure
+      // the `from` matches exactly what Privy expects
       const provider = await wallet.getEthereumProvider();
       const txHash = await provider.request({
         method: "eth_sendTransaction",
         params: [{
-          from: walletAddress,
+          from: wallet.address,
           to: transactionRequest.to,
           data: transactionRequest.data,
           value: transactionRequest.value && transactionRequest.value !== "0"

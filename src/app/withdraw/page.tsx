@@ -124,7 +124,7 @@ function WithdrawPageContent() {
       const txHash = await provider.request({
         method: "eth_sendTransaction",
         params: [{
-          from: walletAddress,
+          from: wallet.address,
           to: transactionRequest.to,
           data: transactionRequest.data,
           value: transactionRequest.value && transactionRequest.value !== "0"
