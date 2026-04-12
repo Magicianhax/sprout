@@ -154,7 +154,7 @@ export function WalletActionBar({
         </Card>
       ) : (
         <Card shadow="subtle" className="mx-5 !p-4">
-          <div className="flex items-start justify-between mb-3 px-1 gap-3">
+          <div className="flex items-start justify-between mb-4 px-1 gap-3">
             <div className="min-w-0">
               <p className="text-[10px] font-bold uppercase tracking-wider text-sprout-text-muted">
                 Your wallet
@@ -180,18 +180,21 @@ export function WalletActionBar({
                   />
                 )}
               </button>
-              <p className="font-heading text-2xl font-800 text-sprout-text-primary mt-2">
+            </div>
+
+            <div className="text-right shrink-0">
+              <p className="font-heading text-2xl font-800 text-sprout-text-primary leading-none">
                 {formatCurrency(totalUsd)}
               </p>
-              <p className="text-[11px] text-sprout-text-muted">
+              <p className="text-[10px] text-sprout-text-muted mt-0.5">
                 Total value
               </p>
+              {earningBalanceUsd > 0 && (
+                <p className="text-[11px] font-semibold text-sprout-green-dark mt-1">
+                  {formatCurrency(earningBalanceUsd)} earning
+                </p>
+              )}
             </div>
-            {copied && (
-              <span className="text-[11px] font-semibold text-sprout-green-dark shrink-0 mt-5">
-                Copied!
-              </span>
-            )}
           </div>
 
           {actions}
