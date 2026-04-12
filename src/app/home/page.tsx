@@ -194,19 +194,14 @@ function ProHome() {
       )}
 
       {/* Filter row */}
-      <div className="px-5 mt-4 mb-3">
-        <p className="font-heading text-base font-700 text-sprout-text-primary mb-2">
-          Opportunities
-        </p>
-        <div className="flex items-center gap-2 flex-wrap">
-          <ProtocolDropdown
-            available={availableProtocols}
-            selected={selectedProtocols}
-            onChange={setSelectedProtocols}
-          />
-          <ChainDropdown selected={selectedChains} onChange={setSelectedChains} />
-          <SortToggle value={sortBy} onChange={setSortBy} />
-        </div>
+      <div className="flex items-center gap-2 flex-wrap px-5 mt-4 mb-3">
+        <ProtocolDropdown
+          available={availableProtocols}
+          selected={selectedProtocols}
+          onChange={setSelectedProtocols}
+        />
+        <ChainDropdown selected={selectedChains} onChange={setSelectedChains} />
+        <SortToggle value={sortBy} onChange={setSortBy} />
       </div>
 
       {/* Asset filter pills */}
