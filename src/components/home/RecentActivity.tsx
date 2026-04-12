@@ -1,7 +1,9 @@
 "use client";
 
+import { useState } from "react";
 import { ExternalLink } from "lucide-react";
 import { TokenIcon } from "@/components/ui/TokenIcon";
+import { ActivityDetailModal } from "@/components/portfolio/ActivityDetailModal";
 import { CHAIN_NAMES } from "@/lib/constants";
 import { displayProtocol } from "@/lib/protocols";
 import { useVaults } from "@/lib/hooks/useVaults";
@@ -211,6 +213,7 @@ function classify(group: ActivityGroup, vaults: Vault[]): Classification {
 
 export function RecentActivity({ records, loading, error }: RecentActivityProps) {
   const { vaults } = useVaults();
+  const [selectedId, setSelectedId] = useState<string | null>(null);
 
   if (loading) {
     return (
@@ -275,8 +278,20 @@ export function RecentActivity({ records, loading, error }: RecentActivityProps)
           // VaultCard/PositionCard. Kind is conveyed by the label verb
           // and the amount color, so we don't double up with another
           // overlay badge.
-          const content = (
-            <div className="flex items-center gap-3 bg-sprout-card rounded-2xl px-4 py-3 shadow-subtle">
+          return (
+            <div
+              key={group.id}
+              role="button"
+              tabIndex={0}
+              onClick={() => setSelectedId(group.id)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" || e.key === " ") {
+                  e.preventDefault();
+                  setSelectedId(group.id);
+                }
+              }}
+              className="flex items-center gap-3 bg-sprout-card rounded-2xl px-4 py-3 shadow-subtle cursor-pointer transition-transform active:scale-[0.99]"
+            >
               <div className="relative shrink-0">
                 <TokenIcon
                   type="token"
@@ -321,26 +336,36 @@ export function RecentActivity({ records, loading, error }: RecentActivityProps)
                 </p>
               </div>
 
-              <ExternalLink
-                size={14}
-                className="text-sprout-text-muted shrink-0"
-              />
+              <a
+                href={group.explorerUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                onClick={(e) => e.stopPropagation()}
+                className="p-1.5 -m-1.5 text-sprout-text-muted hover:text-sprout-green-dark transition-colors shrink-0"
+                aria-label="Open transaction in block explorer"
+              >
+                <ExternalLink size={14} />
+              </a>
             </div>
-          );
-
-          return (
-            <a
-              key={group.id}
-              href={group.explorerUrl}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="block"
-            >
-              {content}
-            </a>
           );
         })}
       </div>
+
+      <ActivityDetailModal
+        open={selectedId !== null}
+        onClose={() => setSelectedId(null)}
+        group={visibleGroups.find((g) => g.id === selectedId) ?? null}
+        classification={
+          selectedId
+            ? (() => {
+                const g = visibleGroups.find((x) => x.id === selectedId);
+                if (!g) return null;
+                const { kind, label, primary, vault } = classify(g, vaults);
+                return { kind, label, primary, vault };
+              })()
+            : null
+        }
+      />
     </div>
   );
 }
