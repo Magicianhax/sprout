@@ -3,6 +3,7 @@
 import { useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { usePrivy } from "@privy-io/react-auth";
+import { RefreshCw } from "lucide-react";
 import { AuthGuard } from "@/components/layout/AuthGuard";
 import { Header } from "@/components/layout/Header";
 import { BottomNav } from "@/components/layout/BottomNav";
@@ -48,10 +49,23 @@ function PortfolioContent() {
       <Header />
 
       {/* Portfolio header */}
-      <div className="px-5 pt-5 pb-4">
+      <div className="flex items-center justify-between gap-3 px-5 pt-5 pb-4">
         <p className="font-heading text-2xl font-800 text-sprout-text-primary">
           Portfolio
         </p>
+        <button
+          type="button"
+          onClick={reload}
+          disabled={loading}
+          className="p-2 rounded-full bg-sprout-card border border-sprout-border shadow-subtle text-sprout-text-primary cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
+          aria-label="Refresh positions"
+        >
+          <RefreshCw
+            size={15}
+            strokeWidth={2.25}
+            className={loading ? "animate-spin" : ""}
+          />
+        </button>
       </div>
 
       {address && (

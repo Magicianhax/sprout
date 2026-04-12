@@ -44,68 +44,6 @@ const TAG_LABELS: Record<string, string> = {
   "yield-farming": "Yield Farming",
 };
 
-function RateHistoryChart({ apy }: { apy: number }) {
-  const [range, setRange] = useState<"1W" | "1M" | "1Y">("1W");
-  const [mode, setMode] = useState<"rate" | "tvl">("rate");
-
-  // Demo paths that vary by range — illustrative for hackathon
-  const paths = {
-    "1W": "M0,40 Q40,38 80,35 T160,32 T240,28 T300,25",
-    "1M": "M0,50 Q50,45 100,38 T200,30 T280,22 T300,20",
-    "1Y": "M0,65 Q60,55 120,45 T200,35 T260,25 T300,18",
-  };
-
-  return (
-    <div className="bg-white rounded-card p-4 shadow-subtle">
-      <div className="flex justify-between items-center mb-3">
-        <span className="text-sm font-semibold text-sprout-text-primary">Rate History</span>
-        <div className="flex gap-1">
-          {(["1W", "1M", "1Y"] as const).map((r) => (
-            <button
-              key={r}
-              onClick={() => setRange(r)}
-              className={`px-2.5 py-0.5 rounded-xl text-[11px] font-semibold cursor-pointer transition-colors
-                ${range === r ? "bg-sprout-green-light text-sprout-green-dark" : "text-sprout-text-muted"}`}
-            >
-              {r}
-            </button>
-          ))}
-        </div>
-      </div>
-
-      <svg width="100%" height="80" viewBox="0 0 300 80" className="block">
-        <defs>
-          <linearGradient id="rate-fill" x1="0" y1="0" x2="0" y2="1">
-            <stop offset="0%" stopColor="#4CAF50" stopOpacity="0.15" />
-            <stop offset="100%" stopColor="#4CAF50" stopOpacity="0" />
-          </linearGradient>
-        </defs>
-        <line x1="0" y1="25" x2="300" y2="25" stroke="#F3F4F6" strokeWidth="1" />
-        <line x1="0" y1="45" x2="300" y2="45" stroke="#F3F4F6" strokeWidth="1" />
-        <line x1="0" y1="65" x2="300" y2="65" stroke="#F3F4F6" strokeWidth="1" />
-        <path d={paths[range]} fill="none" stroke="#4CAF50" strokeWidth="2.5" strokeLinecap="round" />
-        <path d={`${paths[range]} L300,80 L0,80 Z`} fill="url(#rate-fill)" />
-      </svg>
-
-      <div className="flex justify-between items-center mt-2">
-        <span className="text-[11px] text-sprout-text-muted">Current: {apy.toFixed(1)}%</span>
-        <div className="flex gap-1.5">
-          {(["rate", "tvl"] as const).map((m) => (
-            <button
-              key={m}
-              onClick={() => setMode(m)}
-              className={`px-2 py-0.5 rounded-lg text-[11px] font-semibold cursor-pointer transition-colors capitalize
-                ${mode === m ? "bg-sprout-green-light text-sprout-green-dark" : "text-sprout-text-muted"}`}
-            >
-              {m === "rate" ? "Rate" : "TVL"}
-            </button>
-          ))}
-        </div>
-      </div>
-    </div>
-  );
-}
-
 function VaultDetailContent({ vault, chainId }: { vault: Vault; chainId: number }) {
   const router = useRouter();
   const { user } = usePrivy();
@@ -280,16 +218,6 @@ function VaultDetailContent({ vault, chainId }: { vault: Vault; chainId: number 
             </Button>
           )}
         </div>
-
-        {/* Rate history chart */}
-        <Card shadow="subtle" className="overflow-hidden !p-5">
-          <p className="font-heading text-base font-700 text-sprout-text-primary mb-4">
-            Rate History
-          </p>
-          <div className="-mx-5">
-            <RateHistoryChart apy={apy} />
-          </div>
-        </Card>
 
         {/* About protocol */}
         {vault.protocol.url && (

@@ -337,14 +337,22 @@ function DepositPageContent() {
             </Card>
 
             {isCrossChain && vault && (
-              <div className="flex items-center gap-2 px-1">
-                <div className="h-px flex-1 bg-sprout-border" />
-                <span className="text-xs text-sprout-text-muted whitespace-nowrap">
-                  {CHAIN_NAMES[tokenSelection.chainId] ?? tokenSelection.chainId}
-                  {" → "}
-                  {CHAIN_NAMES[vault.chainId] ?? vault.chainId}
-                </span>
-                <div className="h-px flex-1 bg-sprout-border" />
+              <div className="bg-blue-50 rounded-2xl px-4 py-3 text-xs text-blue-700 leading-relaxed">
+                <p className="font-semibold mb-0.5">
+                  Cross-chain deposit
+                </p>
+                <p>
+                  Your {tokenSelection.symbol} on{" "}
+                  <span className="font-semibold">
+                    {CHAIN_NAMES[tokenSelection.chainId] ?? tokenSelection.chainId}
+                  </span>{" "}
+                  will be bridged to{" "}
+                  <span className="font-semibold">
+                    {CHAIN_NAMES[vault.chainId] ?? vault.chainId}
+                  </span>{" "}
+                  and deposited into the vault in one transaction via LI.FI.
+                  You&apos;ll see a chain switch in your wallet.
+                </p>
               </div>
             )}
 
@@ -359,6 +367,27 @@ function DepositPageContent() {
                 symbol={tokenSelection.symbol}
                 balanceLoading={balancesLoading}
               />
+              {selectedTokenBalance > 0 && (
+                <div className="flex items-center gap-2 mt-3">
+                  {[0.25, 0.5, 0.75, 1].map((pct) => (
+                    <button
+                      key={pct}
+                      type="button"
+                      onClick={() =>
+                        setAmount(
+                          String(
+                            // Trim to 6 decimal places to match AmountInput
+                            Number((selectedTokenBalance * pct).toFixed(6))
+                          )
+                        )
+                      }
+                      className="flex-1 py-1.5 rounded-pill text-[11px] font-bold bg-sprout-green-light text-sprout-green-dark cursor-pointer active:scale-[0.97] transition-transform"
+                    >
+                      {pct === 1 ? "MAX" : `${pct * 100}%`}
+                    </button>
+                  ))}
+                </div>
+              )}
             </Card>
 
             {insufficientBalance && (

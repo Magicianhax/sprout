@@ -10,7 +10,6 @@ import {
 } from "lucide-react";
 import { TokenIcon } from "@/components/ui/TokenIcon";
 import { CHAIN_NAMES } from "@/lib/constants";
-import { useAnimatedVisibility } from "@/lib/hooks/useAnimatedVisibility";
 import type { ActivityGroup, Vault, WalletTransfer } from "@/lib/types";
 
 interface Classification {
@@ -62,8 +61,6 @@ export function ActivityDetailModal({
   group,
   classification,
 }: ActivityDetailModalProps) {
-  const { shouldRender, exiting } = useAnimatedVisibility(open);
-
   useEffect(() => {
     if (!open) return;
     function onKey(e: KeyboardEvent) {
@@ -73,7 +70,7 @@ export function ActivityDetailModal({
     return () => document.removeEventListener("keydown", onKey);
   }, [open, onClose]);
 
-  if (!shouldRender || !group || !classification) return null;
+  if (!open || !group || !classification) return null;
 
   const { kind, label, primary, vault } = classification;
   const chainName =
@@ -91,20 +88,27 @@ export function ActivityDetailModal({
       : "text-sprout-text-primary";
 
   return (
-    <div
-      className={`fixed inset-0 z-[60] flex items-end sm:items-center justify-center bg-black/50 backdrop-blur-sm ${
-        exiting ? "sprout-backdrop-exit" : "sprout-backdrop-enter"
-      }`}
-      aria-modal="true"
-      role="dialog"
-      onClick={onClose}
-    >
+    <>
+      <style>{`
+        @keyframes activity-fade-in { from { opacity: 0; } to { opacity: 1; } }
+        @keyframes activity-slide-up {
+          from { opacity: 0; transform: translateY(24px); }
+          to { opacity: 1; transform: translateY(0); }
+        }
+        .activity-backdrop { animation: activity-fade-in 0.22s ease-out both; }
+        .activity-card { animation: activity-slide-up 0.28s ease-out both; }
+      `}</style>
+
       <div
-        className={`bg-sprout-card rounded-t-3xl sm:rounded-3xl shadow-2xl w-full max-w-[420px] max-h-[90dvh] overflow-y-auto p-6 pb-8 relative ${
-          exiting ? "sprout-card-exit" : "sprout-card-enter"
-        }`}
-        onClick={(e) => e.stopPropagation()}
+        className="fixed inset-0 z-[60] flex items-end sm:items-center justify-center bg-black/50 backdrop-blur-sm activity-backdrop"
+        aria-modal="true"
+        role="dialog"
+        onClick={onClose}
       >
+        <div
+          className="bg-sprout-card rounded-t-3xl sm:rounded-3xl shadow-2xl w-full max-w-[420px] max-h-[90dvh] overflow-y-auto p-6 pb-8 activity-card relative"
+          onClick={(e) => e.stopPropagation()}
+        >
           <button
             onClick={onClose}
             className="absolute right-4 top-4 p-1 rounded-full text-sprout-text-muted hover:text-sprout-text-primary transition-colors cursor-pointer"
@@ -189,6 +193,7 @@ export function ActivityDetailModal({
           </a>
         </div>
       </div>
+    </>
   );
 }
 

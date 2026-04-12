@@ -97,9 +97,15 @@ export function usePositions(address: string | undefined) {
 
   useEffect(() => {
     if (!address) {
+      // Mirroring `loading` from `address` here trips React 19's
+      // set-state-in-effect rule. The proper fix is to migrate this
+      // hook to useSyncExternalStore (tracked separately).
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setLoading(false);
       return;
     }
+
+    let cancelled = false;
 
     // Sync local state with shared cache on mount
     if (cache.has(address)) {
@@ -113,17 +119,23 @@ export function usePositions(address: string | undefined) {
           // state pushed via subscribe callback
         })
         .catch((err) => {
+          if (cancelled) return;
           setError(err instanceof Error ? err.message : "Couldn't load your positions");
         })
         .finally(() => {
+          if (cancelled) return;
           setLoading(false);
         });
     }
 
     const unsub = subscribe(address, (next) => {
+      if (cancelled) return;
       setPositions(next);
     });
-    return unsub;
+    return () => {
+      cancelled = true;
+      unsub();
+    };
   }, [address]);
 
   const reload = useCallback(() => {

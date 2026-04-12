@@ -1,5 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
-import { TOKEN_ADDRESSES, TOKEN_DECIMALS } from "@/lib/constants";
+import {
+  RPC_FETCH_TIMEOUT_MS,
+  TOKEN_ADDRESSES,
+  TOKEN_DECIMALS,
+} from "@/lib/constants";
 
 const RPC_URLS: Record<number, string> = {
   1: "https://eth.llamarpc.com",
@@ -29,35 +33,42 @@ async function rpcCall(
   body: object,
   retries = 2,
 ): Promise<string | null> {
+  let lastError: unknown = null;
   for (let attempt = 0; attempt <= retries; attempt++) {
     try {
       const res = await fetch(rpcUrl, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(body),
-        signal: AbortSignal.timeout(10000),
+        signal: AbortSignal.timeout(RPC_FETCH_TIMEOUT_MS),
       });
       if (!res.ok) {
+        lastError = new Error(`HTTP ${res.status}`);
         if (attempt < retries) {
           await new Promise((r) => setTimeout(r, 200 * (attempt + 1)));
           continue;
         }
-        return null;
+        break;
       }
       const json = (await res.json()) as { result?: string; error?: unknown };
-      if (json.error && attempt < retries) {
-        await new Promise((r) => setTimeout(r, 200 * (attempt + 1)));
-        continue;
+      if (json.error) {
+        lastError = json.error;
+        if (attempt < retries) {
+          await new Promise((r) => setTimeout(r, 200 * (attempt + 1)));
+          continue;
+        }
+        break;
       }
       return json.result ?? null;
-    } catch {
+    } catch (err) {
+      lastError = err;
       if (attempt < retries) {
         await new Promise((r) => setTimeout(r, 200 * (attempt + 1)));
         continue;
       }
-      return null;
     }
   }
+  console.warn(`[balances] rpc ${rpcUrl} failed after ${retries + 1} attempts`, lastError);
   return null;
 }
 
@@ -87,13 +98,19 @@ async function fetchNativeBalance(rpcUrl: string, walletAddress: string): Promis
   return hexToNumber(result ?? "0x", 18);
 }
 
+interface BalanceResult {
+  symbol: string;
+  chainId: number;
+  balanceFormatted: number;
+}
+
 export async function GET(request: NextRequest): Promise<NextResponse> {
   const address = request.nextUrl.searchParams.get("address");
   if (!address || !/^0x[0-9a-fA-F]{40}$/.test(address)) {
     return NextResponse.json({ error: "Invalid address" }, { status: 400 });
   }
 
-  const tasks: Promise<{ symbol: string; chainId: number; balanceFormatted: number } | null>[] = [];
+  const tasks: Promise<BalanceResult | { error: string; symbol: string; chainId: number }>[] = [];
 
   for (const [symbol, chainMap] of Object.entries(TOKEN_ADDRESSES)) {
     for (const [chainIdStr, tokenAddress] of Object.entries(chainMap)) {
@@ -110,8 +127,10 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
               ? await fetchNativeBalance(rpcUrl, address)
               : await fetchErc20Balance(rpcUrl, tokenAddress, address, decimals);
             return { symbol, chainId, balanceFormatted };
-          } catch {
-            return null;
+          } catch (err) {
+            const message = err instanceof Error ? err.message : String(err);
+            console.warn(`[balances] ${symbol}@${chainId} failed: ${message}`);
+            return { error: "rpc_failed", symbol, chainId };
           }
         })(),
       );
@@ -120,11 +139,12 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
 
   const results = await Promise.all(tasks);
 
-  const balances = results
-    .filter(
-      (r): r is { symbol: string; chainId: number; balanceFormatted: number } =>
-        r !== null && r.balanceFormatted > 0,
-    )
+  const successes = results.filter(
+    (r): r is BalanceResult => "balanceFormatted" in r && r.balanceFormatted > 0,
+  );
+  const failureCount = results.filter((r) => "error" in r).length;
+
+  const balances = successes
     .map(({ symbol, chainId, balanceFormatted }) => ({
       symbol,
       chainId,
@@ -133,5 +153,11 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
     }))
     .sort((a, b) => b.balanceFormatted - a.balanceFormatted);
 
-  return NextResponse.json({ balances });
+  return NextResponse.json({
+    balances,
+    // Surface partial-failure info so the client can show a stale-data
+    // warning instead of pretending the balance list is authoritative.
+    partial: failureCount > 0,
+    failedCount: failureCount,
+  });
 }

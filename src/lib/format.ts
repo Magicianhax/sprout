@@ -32,8 +32,19 @@ export function formatTokenAmount(amount: string, decimals: number): number {
   return Number(amount) / Math.pow(10, decimals);
 }
 
+// String-based scaling so we don't lose precision on large amounts or
+// high decimals (e.g. 18-decimal tokens overflow Number.MAX_SAFE_INTEGER
+// well before reaching 1 ETH worth of base units).
 export function toTokenUnits(amount: number, decimals: number): string {
-  return Math.floor(amount * Math.pow(10, decimals)).toString();
+  if (!Number.isFinite(amount) || amount <= 0) return "0";
+  if (!Number.isInteger(decimals) || decimals < 0 || decimals > 36) {
+    throw new Error(`Invalid token decimals: ${decimals}`);
+  }
+  const fixed = amount.toFixed(decimals);
+  const [whole, frac = ""] = fixed.split(".");
+  const padded = (frac + "0".repeat(decimals)).slice(0, decimals);
+  const combined = `${whole}${padded}`.replace(/^0+(?=\d)/, "");
+  return combined.length > 0 ? combined : "0";
 }
 
 export function getRiskLevel(tags: string[]): "low" | "medium" | "high" {

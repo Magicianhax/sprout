@@ -8,7 +8,6 @@ import { Header } from "@/components/layout/Header";
 import { BottomNav } from "@/components/layout/BottomNav";
 import { WalletActionBar } from "@/components/portfolio/WalletActionBar";
 import { BalanceCard } from "@/components/home/BalanceCard";
-import { EarningsChart } from "@/components/home/EarningsChart";
 import { EmptyState } from "@/components/home/EmptyState";
 import { TrustBadges } from "@/components/home/TrustBadges";
 import { RecentActivity } from "@/components/home/RecentActivity";
@@ -16,7 +15,7 @@ import { VaultCard } from "@/components/vault/VaultCard";
 import { ChainDropdown } from "@/components/vault/ChainDropdown";
 import { ProtocolDropdown } from "@/components/vault/ProtocolDropdown";
 import { SortToggle } from "@/components/vault/SortToggle";
-import { ChevronLeft, ChevronRight, Search, X } from "lucide-react";
+import { ChevronLeft, ChevronRight, RefreshCw, Search, X } from "lucide-react";
 import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
 import { BalanceHeroSkeleton, VaultCardSkeleton } from "@/components/ui/CardSkeletons";
@@ -46,6 +45,7 @@ function LiteHome() {
   const activity = useActivity(address);
   const { balances } = useBalances(address);
   const prices = usePrices();
+  const { vaults } = useVaults();
 
   const hasPositions = positions.length > 0;
 
@@ -61,8 +61,31 @@ function LiteHome() {
   );
   const totalValueUsd = totalBalance + walletUsd;
 
-  // APY data is not available from the positions endpoint; show balance only
-  const avgApy = 0;
+  // USD-weighted average APY across positions. For each position we
+  // look up the matching vault in the shared cache and pull its APY;
+  // positions with no vault match (rare, happens while the vault
+  // stream is still loading) contribute 0 and pull the average down.
+  const avgApy = useMemo(() => {
+    if (!hasPositions || vaults.length === 0) return 0;
+    let weighted = 0;
+    let total = 0;
+    for (const p of positions) {
+      const usd = parseFloat(p.balanceUsd || "0");
+      if (!(usd > 0)) continue;
+      const vault = vaults.find(
+        (v) =>
+          v.chainId === p.chainId &&
+          v.protocol.name === p.protocolName &&
+          v.underlyingTokens.some(
+            (t) => t.address.toLowerCase() === p.asset.address.toLowerCase()
+          )
+      );
+      if (!vault) continue;
+      weighted += usd * vault.analytics.apy.total;
+      total += usd;
+    }
+    return total > 0 ? weighted / total : 0;
+  }, [positions, vaults, hasPositions]);
 
   return (
     <main className="min-h-dvh bg-sprout-gradient pb-28">
@@ -102,7 +125,6 @@ function LiteHome() {
             earningBalance={totalBalance}
             avgApy={avgApy}
           />
-          <EarningsChart />
 
           <div className="px-5 flex flex-col gap-3">
             <Button
@@ -287,6 +309,19 @@ function ProHome() {
         />
         <ChainDropdown selected={selectedChains} onChange={setSelectedChains} />
         <SortToggle value={sortBy} onChange={setSortBy} />
+        <button
+          type="button"
+          onClick={reload}
+          disabled={loading}
+          className="ml-auto p-2 rounded-full bg-sprout-card border border-sprout-border shadow-subtle text-sprout-text-primary cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
+          aria-label="Refresh vaults"
+        >
+          <RefreshCw
+            size={14}
+            strokeWidth={2.25}
+            className={loading || loadingMore ? "animate-spin" : ""}
+          />
+        </button>
       </div>
 
       {/* Asset filter pills */}

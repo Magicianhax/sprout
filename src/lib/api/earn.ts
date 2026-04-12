@@ -1,8 +1,32 @@
-import { SUPPORTED_CHAIN_IDS } from "@/lib/constants";
-import type { Vault, VaultsResponse, Chain, PositionsResponse } from "@/lib/types";
+import {
+  SUPPORTED_CHAIN_IDS,
+  VAULT_MAX_PAGES,
+  VAULT_PAGE_SIZE,
+} from "@/lib/constants";
+import type {
+  Vault,
+  VaultsResponse,
+  Chain,
+  PositionsResponse,
+} from "@/lib/types";
+import {
+  ApiShapeError,
+  isPositionsResponse,
+  isVaultsResponse,
+} from "@/lib/schemas";
 
 // Earn API doesn't support CORS — all calls proxied through /api/earn/
 const API_BASE = "/api/earn";
+
+async function getJson(url: string, endpoint: string): Promise<unknown> {
+  const res = await fetch(url);
+  if (!res.ok) {
+    throw new Error(`${endpoint} error: ${res.status}`);
+  }
+  return res.json().catch(() => {
+    throw new ApiShapeError(endpoint);
+  });
+}
 
 // Raw fetch — returns the API response as-is without any client-side filter.
 // Used internally by the paginator so early breaks aren't triggered by the
@@ -20,9 +44,15 @@ async function fetchVaultsRaw(params?: {
   if (params?.sortBy) searchParams.set("sortBy", params.sortBy);
   if (params?.limit) searchParams.set("limit", String(params.limit));
   if (params?.cursor) searchParams.set("cursor", params.cursor);
-  const res = await fetch(`${API_BASE}/v1/earn/vaults?${searchParams}`);
-  if (!res.ok) throw new Error(`Earn API error: ${res.status}`);
-  return res.json();
+
+  const json = await getJson(
+    `${API_BASE}/v1/earn/vaults?${searchParams}`,
+    "vaults"
+  );
+  if (!isVaultsResponse(json)) {
+    throw new ApiShapeError("vaults");
+  }
+  return json;
 }
 
 export async function fetchVaults(params?: {
@@ -54,8 +84,8 @@ export async function fetchVaultsStreaming(
   },
   onPage: (cumulative: Vault[]) => void
 ): Promise<Vault[]> {
-  const pageSize = params.pageSize ?? 100;
-  const maxPages = params.maxPages ?? 10;
+  const pageSize = params.pageSize ?? VAULT_PAGE_SIZE;
+  const maxPages = params.maxPages ?? VAULT_MAX_PAGES;
 
   const seen = new Set<string>();
   const cumulative: Vault[] = [];
@@ -107,19 +137,27 @@ export async function fetchAllVaults(params?: {
 }
 
 export async function fetchChains(): Promise<Chain[]> {
-  const res = await fetch(`${API_BASE}/v1/earn/chains`);
-  if (!res.ok) throw new Error(`Chains API error: ${res.status}`);
-  return res.json();
+  const json = await getJson(`${API_BASE}/v1/earn/chains`, "chains");
+  if (!Array.isArray(json)) throw new ApiShapeError("chains");
+  return json as Chain[];
 }
 
 export async function fetchProtocols(): Promise<{ name: string; url?: string }[]> {
-  const res = await fetch(`${API_BASE}/v1/earn/protocols`);
-  if (!res.ok) throw new Error(`Protocols API error: ${res.status}`);
-  return res.json();
+  const json = await getJson(`${API_BASE}/v1/earn/protocols`, "protocols");
+  if (!Array.isArray(json)) throw new ApiShapeError("protocols");
+  return json as { name: string; url?: string }[];
 }
 
 export async function fetchPositions(address: string): Promise<PositionsResponse> {
-  const res = await fetch(`${API_BASE}/v1/earn/portfolio/${address}/positions`);
-  if (!res.ok) throw new Error(`Positions API error: ${res.status}`);
-  return res.json();
+  if (!/^0x[0-9a-fA-F]{40}$/.test(address)) {
+    throw new Error("Invalid wallet address");
+  }
+  const json = await getJson(
+    `${API_BASE}/v1/earn/portfolio/${address}/positions`,
+    "positions"
+  );
+  if (!isPositionsResponse(json)) {
+    throw new ApiShapeError("positions");
+  }
+  return json;
 }

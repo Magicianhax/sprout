@@ -1,12 +1,12 @@
 import { Card } from "@/components/ui/Card";
-import { Badge } from "@/components/ui/Badge";
-import { formatCurrency, formatPercent, dailyEarnings } from "@/lib/format";
+import { formatCurrency, formatPercent } from "@/lib/format";
 
 interface BalanceCardProps {
   /** Total wallet value (earning positions + idle token holdings). */
   totalBalance: number;
   /** Slice of totalBalance that's deposited into earning protocols. */
   earningBalance: number;
+  /** Weighted-average APY across the user's earning positions. */
   avgApy: number;
 }
 
@@ -15,7 +15,8 @@ export function BalanceCard({
   earningBalance,
   avgApy,
 }: BalanceCardProps) {
-  const daily = avgApy > 0 ? dailyEarnings(earningBalance, avgApy) : null;
+  // avgApy is in percent form (e.g. 4.2 means 4.2%).
+  const yearly = avgApy > 0 ? earningBalance * (avgApy / 100) : 0;
 
   return (
     <Card className="mx-5">
@@ -28,11 +29,14 @@ export function BalanceCard({
           {formatCurrency(earningBalance)} earning
         </p>
       )}
-      {daily !== null && (
-        <div className="flex items-center gap-1.5 mt-3">
-          <Badge color="green">+{formatCurrency(daily)} today</Badge>
+      {yearly > 0 && (
+        <div className="mt-3 flex items-baseline gap-1.5">
+          <span className="text-xs text-sprout-text-muted">You&apos;ll earn about</span>
+          <span className="text-sm font-bold text-sprout-green-dark">
+            {formatCurrency(yearly)}
+          </span>
           <span className="text-xs text-sprout-text-muted">
-            earning {formatPercent(avgApy)} yearly
+            / year at {formatPercent(avgApy)}
           </span>
         </div>
       )}

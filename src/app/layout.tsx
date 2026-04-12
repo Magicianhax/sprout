@@ -1,7 +1,6 @@
 import type { Metadata, Viewport } from "next";
 import { PrivyProvider } from "@/components/providers/PrivyProvider";
 import { ThemeSync } from "@/components/providers/ThemeSync";
-import { PageTransition } from "@/components/layout/PageTransition";
 import "./globals.css";
 
 export const metadata: Metadata = {
@@ -29,7 +28,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
       <body className="font-body bg-sprout-gradient min-h-dvh">
         <PrivyProvider>
           <ThemeSync />
-          <PageTransition>{children}</PageTransition>
+          {children}
         </PrivyProvider>
       </body>
     </html>

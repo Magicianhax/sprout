@@ -72,43 +72,6 @@ html.dark {
   --sprout-shimmer-highlight: rgba(110, 231, 168, 0.10);
 }
 
-/* Page enter — wrapper in root layout remounts on every navigation
-   and replays this keyframe. Opacity-only on purpose: any non-identity
-   `transform` on the wrapper would create a new containing block and
-   detach `position: fixed` descendants (Header / BottomNav) from the
-   viewport. */
-@keyframes sprout-page-enter {
-  from { opacity: 0; }
-  to   { opacity: 1; }
-}
-.sprout-page-enter {
-  animation: sprout-page-enter 0.28s ease-out both;
-}
-
-/* Shared modal animations — used by every modal in the app via the
-   useAnimatedVisibility hook. Enter plays while `open` is true, exit
-   plays once when `open` flips to false, then the modal unmounts. */
-@keyframes sprout-backdrop-in {
-  from { opacity: 0; }
-  to   { opacity: 1; }
-}
-@keyframes sprout-backdrop-out {
-  from { opacity: 1; }
-  to   { opacity: 0; }
-}
-@keyframes sprout-card-in {
-  from { opacity: 0; transform: translateY(24px) scale(0.98); }
-  to   { opacity: 1; transform: translateY(0) scale(1); }
-}
-@keyframes sprout-card-out {
-  from { opacity: 1; transform: translateY(0) scale(1); }
-  to   { opacity: 0; transform: translateY(16px) scale(0.98); }
-}
-.sprout-backdrop-enter { animation: sprout-backdrop-in 0.22s ease-out both; }
-.sprout-backdrop-exit  { animation: sprout-backdrop-out 0.2s ease-in both; }
-.sprout-card-enter     { animation: sprout-card-in 0.3s cubic-bezier(0.22, 0.61, 0.36, 1) both; }
-.sprout-card-exit      { animation: sprout-card-out 0.22s ease-in both; }
-
 /* Dark mode — deep forest theme that mirrors the organic feel of the
    light theme. Activated by `dark` class on <html>. Overrides sprout
    tokens so every component that reads them flips automatically. */

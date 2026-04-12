@@ -7,7 +7,6 @@ import { TokenIcon } from "@/components/ui/TokenIcon";
 import { TransactionModal } from "@/components/deposit/TransactionModal";
 import { CHAIN_NAMES, TOKEN_ADDRESSES, TOKEN_DECIMALS } from "@/lib/constants";
 import { toTokenUnits } from "@/lib/format";
-import { useAnimatedVisibility } from "@/lib/hooks/useAnimatedVisibility";
 import type { TokenBalance } from "@/lib/hooks/useBalances";
 
 interface SendModalProps {
@@ -63,9 +62,8 @@ export function SendModal({
   const [phase, setPhase] = useState<Phase>("form");
   const [txHash, setTxHash] = useState("");
   const [errorMessage, setErrorMessage] = useState("");
-  const { shouldRender, exiting } = useAnimatedVisibility(open);
 
-  if (!shouldRender) return null;
+  if (!open) return null;
 
   const selected = sendable.find((b) => tokenKey(b) === selectedKey) ?? sendable[0];
   const numeric = parseFloat(amount);
@@ -164,18 +162,24 @@ export function SendModal({
 
   return (
     <>
+      <style>{`
+        @keyframes send-fade-in { from { opacity: 0; } to { opacity: 1; } }
+        @keyframes send-slide-up {
+          from { opacity: 0; transform: translateY(24px); }
+          to { opacity: 1; transform: translateY(0); }
+        }
+        .send-backdrop { animation: send-fade-in 0.22s ease-out both; }
+        .send-card { animation: send-slide-up 0.3s ease-out both; }
+      `}</style>
+
       <div
-        className={`fixed inset-0 z-[60] flex items-center justify-center px-5 bg-black/50 backdrop-blur-sm ${
-          exiting ? "sprout-backdrop-exit" : "sprout-backdrop-enter"
-        }`}
+        className="fixed inset-0 z-50 flex items-center justify-center px-5 bg-black/50 backdrop-blur-sm send-backdrop"
         aria-modal="true"
         role="dialog"
         onClick={handleFullClose}
       >
         <div
-          className={`bg-sprout-card rounded-3xl shadow-2xl w-full max-w-[380px] p-6 relative ${
-            exiting ? "sprout-card-exit" : "sprout-card-enter"
-          }`}
+          className="bg-sprout-card rounded-3xl shadow-2xl w-full max-w-[380px] p-6 send-card relative"
           onClick={(e) => e.stopPropagation()}
         >
           <button

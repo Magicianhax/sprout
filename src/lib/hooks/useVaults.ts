@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import type { Vault, SortBy } from "@/lib/types";
 import { fetchVaultsStreaming } from "@/lib/api/earn";
 import { parseTvl, getRiskLevel } from "@/lib/format";
+import { VAULT_MAX_PAGES, VAULT_PAGE_SIZE } from "@/lib/constants";
 
 interface UseVaultsOptions {
   chainIds?: number[];
@@ -48,7 +49,7 @@ function startStream(token: string | undefined) {
   setState(key, { vaults: existing?.vaults ?? [], done: false, error: null });
 
   const promise = fetchVaultsStreaming(
-    { pageSize: 100, maxPages: 10, asset: token },
+    { pageSize: VAULT_PAGE_SIZE, maxPages: VAULT_MAX_PAGES, asset: token },
     (cumulative) => {
       setState(key, { vaults: cumulative, done: false, error: null });
     }
