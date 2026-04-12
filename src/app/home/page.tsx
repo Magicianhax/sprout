@@ -15,7 +15,7 @@ import { VaultCard } from "@/components/vault/VaultCard";
 import { ChainDropdown } from "@/components/vault/ChainDropdown";
 import { ProtocolDropdown } from "@/components/vault/ProtocolDropdown";
 import { SortToggle } from "@/components/vault/SortToggle";
-import { ChevronLeft, ChevronRight } from "lucide-react";
+import { ChevronLeft, ChevronRight, Search, X } from "lucide-react";
 import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
 import { Skeleton } from "@/components/ui/Skeleton";
@@ -23,6 +23,8 @@ import { usePreferences } from "@/lib/hooks/usePreferences";
 import { usePositions } from "@/lib/hooks/usePositions";
 import { useVaults } from "@/lib/hooks/useVaults";
 import { formatCurrency, getRiskLevel } from "@/lib/format";
+import { CHAIN_NAMES } from "@/lib/constants";
+import { displayProtocol } from "@/lib/protocols";
 import type { SortBy, Vault } from "@/lib/types";
 
 function getGreeting(): string {
@@ -132,6 +134,7 @@ function ProHome() {
   const [selectedProtocols, setSelectedProtocols] = useState<string[]>([]);
   const [sortBy, setSortBy] = useState<SortBy>("tvl");
   const [assetFilter, setAssetFilter] = useState<string>("all");
+  const [searchQuery, setSearchQuery] = useState<string>("");
 
   const { vaults, loading, error, reload } = useVaults({
     chainIds: selectedChains.length > 0 ? selectedChains : undefined,
@@ -150,20 +153,39 @@ function ProHome() {
     return Array.from(set);
   }, [assetFilteredVaults]);
 
-  const visibleVaults = useMemo(() => {
+  const protocolFilteredVaults = useMemo(() => {
     if (selectedProtocols.length === 0) return assetFilteredVaults;
     const set = new Set(selectedProtocols);
     return assetFilteredVaults.filter((v) => set.has(v.protocol.name));
   }, [assetFilteredVaults, selectedProtocols]);
 
+  const visibleVaults = useMemo(() => {
+    const q = searchQuery.trim().toLowerCase();
+    if (!q) return protocolFilteredVaults;
+    return protocolFilteredVaults.filter((v) => {
+      const chainName = (CHAIN_NAMES[v.chainId] ?? `Chain ${v.chainId}`).toLowerCase();
+      const protocolRaw = v.protocol.name.toLowerCase();
+      const protocolPretty = displayProtocol(v.protocol.name).toLowerCase();
+      const name = v.name.toLowerCase();
+      const tokenSymbols = v.underlyingTokens.map((t) => t.symbol.toLowerCase());
+      return (
+        chainName.includes(q) ||
+        protocolRaw.includes(q) ||
+        protocolPretty.includes(q) ||
+        name.includes(q) ||
+        tokenSymbols.some((s) => s.includes(q))
+      );
+    });
+  }, [protocolFilteredVaults, searchQuery]);
+
   const PAGE_SIZE = 10;
   const [page, setPage] = useState(1);
   const totalPages = Math.max(1, Math.ceil(visibleVaults.length / PAGE_SIZE));
 
-  // Reset to first page when filters/sort change
+  // Reset to first page when filters/sort/search change
   useEffect(() => {
     setPage(1);
-  }, [selectedChains, selectedProtocols, sortBy, assetFilter]);
+  }, [selectedChains, selectedProtocols, sortBy, assetFilter, searchQuery]);
 
   // Clamp page if list shrinks
   useEffect(() => {
@@ -193,8 +215,34 @@ function ProHome() {
         </div>
       )}
 
+      {/* Search bar */}
+      <div className="px-5 mt-4 mb-3">
+        <div className="relative">
+          <Search
+            size={16}
+            className="absolute left-3.5 top-1/2 -translate-y-1/2 text-sprout-text-muted pointer-events-none"
+          />
+          <input
+            type="text"
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            placeholder="Search token, chain, or protocol"
+            className="w-full bg-white border border-sprout-border rounded-pill pl-10 pr-10 py-2.5 text-sm text-sprout-text-primary placeholder:text-sprout-text-muted shadow-subtle focus:outline-none focus:border-sprout-green-primary"
+          />
+          {searchQuery && (
+            <button
+              onClick={() => setSearchQuery("")}
+              className="absolute right-3 top-1/2 -translate-y-1/2 text-sprout-text-muted hover:text-sprout-text-primary cursor-pointer"
+              aria-label="Clear search"
+            >
+              <X size={16} />
+            </button>
+          )}
+        </div>
+      </div>
+
       {/* Filter row */}
-      <div className="flex items-center gap-2 flex-wrap px-5 mt-4 mb-3">
+      <div className="flex items-center gap-2 flex-wrap px-5 mb-3">
         <ProtocolDropdown
           available={availableProtocols}
           selected={selectedProtocols}
