@@ -10,6 +10,13 @@ import type { ActivityGroup, WalletTransfer } from "@/lib/types";
 
 const ALCHEMY_API_KEY = process.env.ALCHEMY_API_KEY;
 
+export const dynamic = "force-dynamic";
+export const revalidate = 0;
+
+const NO_STORE_HEADERS = {
+  "Cache-Control": "no-store, must-revalidate",
+};
+
 // We fetch up to 20 transfers per chain per direction; 5 chains × 2
 // directions = 10 upstream calls per request. Grouped results are
 // capped to MAX_GROUPS so the response stays small.
@@ -107,6 +114,7 @@ async function queryAlchemy(
   try {
     const res = await fetch(url, {
       method: "POST",
+      cache: "no-store",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(body),
       signal: AbortSignal.timeout(API_FETCH_TIMEOUT_MS),
@@ -232,7 +240,7 @@ export async function GET(request: NextRequest) {
     console.error("[activity] ALCHEMY_API_KEY not configured");
     return NextResponse.json(
       { message: "Server configuration error" },
-      { status: 500 }
+      { status: 500, headers: NO_STORE_HEADERS }
     );
   }
 
@@ -240,7 +248,7 @@ export async function GET(request: NextRequest) {
   if (!address || !/^0x[0-9a-fA-F]{40}$/.test(address)) {
     return NextResponse.json(
       { message: "Invalid or missing address" },
-      { status: 400 }
+      { status: 400, headers: NO_STORE_HEADERS }
     );
   }
 
@@ -263,5 +271,5 @@ export async function GET(request: NextRequest) {
   const allTransfers = (await Promise.all(jobs)).flat();
   const groups = groupByHash(allTransfers).slice(0, MAX_GROUPS);
 
-  return NextResponse.json({ data: groups });
+  return NextResponse.json({ data: groups }, { headers: NO_STORE_HEADERS });
 }

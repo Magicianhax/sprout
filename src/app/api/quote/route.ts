@@ -9,6 +9,13 @@ import {
 
 const LIFI_API_KEY = process.env.LIFI_API_KEY;
 
+export const dynamic = "force-dynamic";
+export const revalidate = 0;
+
+const NO_STORE_HEADERS = {
+  "Cache-Control": "no-store, must-revalidate",
+};
+
 const REQUIRED_PARAMS = [
   "fromChain",
   "toChain",
@@ -80,13 +87,16 @@ export async function GET(request: NextRequest) {
     console.error("[quote] LIFI_API_KEY not configured");
     return NextResponse.json(
       { message: "Server configuration error" },
-      { status: 500 }
+      { status: 500, headers: NO_STORE_HEADERS }
     );
   }
 
   const validated = validateAndFilterParams(request.nextUrl.searchParams);
   if (!validated.ok) {
-    return NextResponse.json({ message: validated.message }, { status: 400 });
+    return NextResponse.json(
+      { message: validated.message },
+      { status: 400, headers: NO_STORE_HEADERS }
+    );
   }
 
   const composerUrl = `${LIFI_API_BASE}/v1/quote?${validated.params.toString()}`;
@@ -94,6 +104,7 @@ export async function GET(request: NextRequest) {
   try {
     const res = await fetch(composerUrl, {
       headers: { "x-lifi-api-key": LIFI_API_KEY },
+      cache: "no-store",
       signal: AbortSignal.timeout(API_FETCH_TIMEOUT_MS),
     });
 
@@ -106,17 +117,17 @@ export async function GET(request: NextRequest) {
       const status = res.status >= 500 ? 502 : 400;
       return NextResponse.json(
         { message: "Failed to get quote" },
-        { status }
+        { status, headers: NO_STORE_HEADERS }
       );
     }
 
     const data = await res.json();
-    return NextResponse.json(data);
+    return NextResponse.json(data, { headers: NO_STORE_HEADERS });
   } catch (err) {
     console.error("[quote] network error", err);
     return NextResponse.json(
       { message: "Network error fetching quote" },
-      { status: 502 }
+      { status: 502, headers: NO_STORE_HEADERS }
     );
   }
 }

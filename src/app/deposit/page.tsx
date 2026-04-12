@@ -17,9 +17,10 @@ import {
   TOKEN_ADDRESSES,
   TOKEN_DECIMALS,
 } from "@/lib/constants";
-import { useBalances } from "@/lib/hooks/useBalances";
+import { invalidateBalances, useBalances } from "@/lib/hooks/useBalances";
 import { invalidatePositions } from "@/lib/hooks/usePositions";
 import { invalidateActivity } from "@/lib/hooks/useActivity";
+import { POSITION_RESYNC_DELAYS_MS } from "@/lib/constants";
 import { AmountInput } from "@/components/deposit/AmountInput";
 import { DepositPreview } from "@/components/deposit/DepositPreview";
 import { usePreferences } from "@/lib/hooks/usePreferences";
@@ -231,14 +232,19 @@ function DepositPageContent() {
       setTxHash(txHash as string);
       setStatus("success");
 
-      // Kick the shared caches so positions + LI.FI analytics reflect
-      // the new deposit without the user needing to reload.
+      // Kick the shared caches so positions, balances, and activity
+      // all reflect the new deposit without the user needing to
+      // reload. Balances drop immediately on-chain, positions and
+      // activity lag the indexer by ~10–60s so we schedule several
+      // retries.
       const walletAddress = wallet.address;
       if (walletAddress) {
+        invalidateBalances(walletAddress).catch(() => {});
         invalidatePositions(walletAddress).catch(() => {});
         invalidateActivity(walletAddress).catch(() => {});
-        for (const ms of [4000, 12000, 30000]) {
+        for (const ms of POSITION_RESYNC_DELAYS_MS) {
           setTimeout(() => {
+            invalidateBalances(walletAddress).catch(() => {});
             invalidatePositions(walletAddress).catch(() => {});
             invalidateActivity(walletAddress).catch(() => {});
           }, ms);

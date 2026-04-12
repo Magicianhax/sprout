@@ -107,26 +107,29 @@ export function usePositions(address: string | undefined) {
 
     let cancelled = false;
 
-    // Sync local state with shared cache on mount
+    // Show cached data instantly if we have it — keeps the UI snappy.
     if (cache.has(address)) {
       setPositions(cache.get(address)!);
       setLoading(false);
     } else {
       setLoading(true);
       setError(null);
-      loadPositions(address)
-        .then(() => {
-          // state pushed via subscribe callback
-        })
-        .catch((err) => {
-          if (cancelled) return;
-          setError(err instanceof Error ? err.message : "Couldn't load your positions");
-        })
-        .finally(() => {
-          if (cancelled) return;
-          setLoading(false);
-        });
     }
+
+    // Always kick a fresh fetch on mount. loadPositions always hits
+    // the earn API (deduped via the inflight map) and updates the
+    // shared cache on resolve, broadcasting the new data to every
+    // subscriber. The old cache entry stays in place during the
+    // in-flight window so we don't flash a loading state.
+    loadPositions(address)
+      .catch((err) => {
+        if (cancelled) return;
+        setError(err instanceof Error ? err.message : "Couldn't load your positions");
+      })
+      .finally(() => {
+        if (cancelled) return;
+        setLoading(false);
+      });
 
     const unsub = subscribe(address, (next) => {
       if (cancelled) return;

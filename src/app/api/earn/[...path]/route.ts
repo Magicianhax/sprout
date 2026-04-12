@@ -8,6 +8,17 @@ import {
 
 const LIFI_API_KEY = process.env.LIFI_API_KEY;
 
+// Proxy is always live — every call hits the upstream. Without this
+// Next can treat the route as static and the browser can cache GETs
+// across calls, which means post-deposit invalidations return old
+// data until a hard reload.
+export const dynamic = "force-dynamic";
+export const revalidate = 0;
+
+const NO_STORE_HEADERS = {
+  "Cache-Control": "no-store, must-revalidate",
+};
+
 function isAllowedPath(path: string): boolean {
   return EARN_API_PATH_ALLOWLIST.some((re) => re.test(path));
 }
@@ -49,6 +60,7 @@ export async function GET(
   try {
     const res = await fetch(url, {
       headers,
+      cache: "no-store",
       signal: AbortSignal.timeout(API_FETCH_TIMEOUT_MS),
     });
 
@@ -62,14 +74,17 @@ export async function GET(
       );
       return NextResponse.json(
         { message: "Earn API error" },
-        { status: res.status >= 500 ? 502 : res.status }
+        { status: res.status >= 500 ? 502 : res.status, headers: NO_STORE_HEADERS }
       );
     }
 
     const data = await res.json();
-    return NextResponse.json(data);
+    return NextResponse.json(data, { headers: NO_STORE_HEADERS });
   } catch (err) {
     console.error(`[earn proxy] ${apiPath}`, err);
-    return NextResponse.json({ message: "Upstream unavailable" }, { status: 502 });
+    return NextResponse.json(
+      { message: "Upstream unavailable" },
+      { status: 502, headers: NO_STORE_HEADERS }
+    );
   }
 }

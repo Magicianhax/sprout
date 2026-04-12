@@ -16,6 +16,7 @@ import {
   optimisticallyRemovePosition,
 } from "@/lib/hooks/usePositions";
 import { invalidateActivity } from "@/lib/hooks/useActivity";
+import { invalidateBalances } from "@/lib/hooks/useBalances";
 import type { ComposerQuote, Position, Vault } from "@/lib/types";
 
 // Protocols whose vault address is an ERC4626 share token. For these
@@ -103,8 +104,13 @@ function markWithdrawn(
       position.protocolName
     );
   }
+  // Fire an immediate round so the user sees the change as soon as
+  // they close the success modal, then follow up on the retry
+  // schedule for the slow indexer tail.
+  invalidateBalances(walletAddress).catch(() => {});
   for (const ms of POSITION_RESYNC_DELAYS_MS) {
     setTimeout(() => {
+      invalidateBalances(walletAddress).catch(() => {});
       invalidatePositions(walletAddress).catch((err) => {
         console.warn("[withdraw] background position resync failed", err);
       });

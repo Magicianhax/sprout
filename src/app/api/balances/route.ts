@@ -15,6 +15,13 @@ const RPC_URLS: Record<number, string> = {
 
 const ZERO_ADDRESS = "0x0000000000000000000000000000000000000000";
 
+export const dynamic = "force-dynamic";
+export const revalidate = 0;
+
+const NO_STORE_HEADERS = {
+  "Cache-Control": "no-store, must-revalidate",
+};
+
 function hexToNumber(hex: string, decimals: number): number {
   if (!hex || hex === "0x" || hex === "0x0") return 0;
   const clean = hex.replace(/^0x/, "");
@@ -153,11 +160,14 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
     }))
     .sort((a, b) => b.balanceFormatted - a.balanceFormatted);
 
-  return NextResponse.json({
-    balances,
-    // Surface partial-failure info so the client can show a stale-data
-    // warning instead of pretending the balance list is authoritative.
-    partial: failureCount > 0,
-    failedCount: failureCount,
-  });
+  return NextResponse.json(
+    {
+      balances,
+      // Surface partial-failure info so the client can show a stale-data
+      // warning instead of pretending the balance list is authoritative.
+      partial: failureCount > 0,
+      failedCount: failureCount,
+    },
+    { headers: NO_STORE_HEADERS }
+  );
 }

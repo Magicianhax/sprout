@@ -35,7 +35,7 @@ async function loadActivity(address: string): Promise<ActivityGroup[]> {
   const existing = inflight.get(address);
   if (existing) return existing;
 
-  const promise = fetch(`/api/activity?address=${address}`)
+  const promise = fetch(`/api/activity?address=${address}`, { cache: "no-store" })
     .then(async (res) => {
       if (!res.ok) throw new Error(`Activity error: ${res.status}`);
       const body = (await res.json()) as ActivityResponse;
@@ -77,22 +77,27 @@ export function useActivity(address: string | undefined) {
 
     let cancelled = false;
 
+    // Show cached data instantly — fresh fetch fills in over the top
+    // via the subscribe callback.
     if (cache.has(address)) {
       setRecords(cache.get(address)!);
       setLoading(false);
     } else {
       setLoading(true);
       setError(null);
-      loadActivity(address)
-        .catch((err) => {
-          if (cancelled) return;
-          setError(err instanceof Error ? err.message : "Couldn't load activity");
-        })
-        .finally(() => {
-          if (cancelled) return;
-          setLoading(false);
-        });
     }
+
+    // Always kick a fresh fetch on mount so any post-tx navigation
+    // reflects the latest state (Alchemy indexer lag ~5–15s).
+    loadActivity(address)
+      .catch((err) => {
+        if (cancelled) return;
+        setError(err instanceof Error ? err.message : "Couldn't load activity");
+      })
+      .finally(() => {
+        if (cancelled) return;
+        setLoading(false);
+      });
 
     const unsub = subscribe(address, (next) => {
       if (cancelled) return;

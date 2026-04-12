@@ -105,7 +105,11 @@ export const HOME_PAGE_SIZE = 10;
 
 // Timing
 export const QUOTE_DEBOUNCE_MS = 600;
-export const POSITION_RESYNC_DELAYS_MS = [4000, 12000, 30000] as const;
+// After a deposit/withdraw, we invalidate caches and then keep
+// retrying on this schedule so slow indexers (LI.FI earn, Alchemy)
+// eventually report the new state. Earn positions in particular can
+// take 30-60s to land, so we push the last retry out to 90s.
+export const POSITION_RESYNC_DELAYS_MS = [3000, 8000, 20000, 45000, 90000] as const;
 export const API_FETCH_TIMEOUT_MS = 15000;
 export const RPC_FETCH_TIMEOUT_MS = 10000;
 
