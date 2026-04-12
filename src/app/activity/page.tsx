@@ -231,11 +231,6 @@ function ActivityContent() {
         </>
       )}
 
-      <p className="mx-5 mt-6 text-[10px] text-sprout-text-muted leading-relaxed">
-        Shows activity across supported chains. Spam airdrops are filtered
-        out. Tap any row for details.
-      </p>
-
       <BottomNav />
 
       <ActivityDetailModal

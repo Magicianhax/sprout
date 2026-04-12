@@ -1,11 +1,10 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect } from "react";
 import {
   ArrowDownLeft,
   ArrowUpRight,
   Check,
-  Copy,
   ExternalLink,
   X,
 } from "lucide-react";
@@ -62,8 +61,6 @@ export function ActivityDetailModal({
   group,
   classification,
 }: ActivityDetailModalProps) {
-  const [hashCopied, setHashCopied] = useState(false);
-
   useEffect(() => {
     if (!open) return;
     function onKey(e: KeyboardEvent) {
@@ -90,18 +87,6 @@ export function ActivityDetailModal({
       ? "text-sprout-green-dark"
       : "text-sprout-text-primary";
 
-  async function handleCopyHash(e: React.MouseEvent) {
-    e.stopPropagation();
-    if (!group) return;
-    try {
-      await navigator.clipboard.writeText(group.hash);
-      setHashCopied(true);
-      setTimeout(() => setHashCopied(false), 1800);
-    } catch {
-      // clipboard unavailable
-    }
-  }
-
   return (
     <>
       <style>{`
@@ -115,7 +100,7 @@ export function ActivityDetailModal({
       `}</style>
 
       <div
-        className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/50 backdrop-blur-sm activity-backdrop"
+        className="fixed inset-0 z-[60] flex items-end sm:items-center justify-center bg-black/50 backdrop-blur-sm activity-backdrop"
         aria-modal="true"
         role="dialog"
         onClick={onClose}
@@ -195,35 +180,6 @@ export function ActivityDetailModal({
               </div>
             </div>
           )}
-
-          {/* Transaction hash */}
-          <div className="mt-5">
-            <p className="text-[10px] font-bold uppercase tracking-wider text-sprout-text-muted mb-2">
-              Transaction
-            </p>
-            <button
-              type="button"
-              onClick={handleCopyHash}
-              className="w-full flex items-center justify-between gap-2 rounded-2xl bg-sprout-green-light/40 px-4 py-3 cursor-pointer group"
-            >
-              <span className="font-mono text-xs text-sprout-text-primary truncate">
-                {truncateMiddle(group.hash, 10, 8)}
-              </span>
-              {hashCopied ? (
-                <Check
-                  size={14}
-                  strokeWidth={2.5}
-                  className="text-sprout-green-dark shrink-0"
-                />
-              ) : (
-                <Copy
-                  size={14}
-                  strokeWidth={2.25}
-                  className="text-sprout-text-muted group-hover:text-sprout-green-dark transition-colors shrink-0"
-                />
-              )}
-            </button>
-          </div>
 
           {/* Explorer button */}
           <a
