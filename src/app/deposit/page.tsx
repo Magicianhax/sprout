@@ -120,6 +120,15 @@ function DepositPageContent() {
       setQuoteError("");
       return;
     }
+    // Skip quote if the user is asking for more than they have. Shows
+    // the inline error instead of burning an API call that will later
+    // fail on-chain anyway.
+    if (!balancesLoading && numericAmount > selectedTokenBalance) {
+      setQuote(null);
+      setQuoteError("");
+      setStatus("idle");
+      return;
+    }
 
     const decimals = TOKEN_DECIMALS[tokenSelection.symbol] ?? 18;
     const fromAmount = toTokenUnits(numericAmount, decimals);
@@ -151,7 +160,7 @@ function DepositPageContent() {
       setQuote(null);
       setStatus("idle");
     }
-  }, [amount, vault, walletAddress, tokenSelection]);
+  }, [amount, vault, walletAddress, tokenSelection, balancesLoading, selectedTokenBalance]);
 
   useEffect(() => {
     const timer = setTimeout(() => {
@@ -219,6 +228,17 @@ function DepositPageContent() {
 
   const numericAmount = parseFloat(amount);
   const validAmount = !isNaN(numericAmount) && numericAmount > 0;
+  // Only treat as "too much" once we actually know the balance (avoids
+  // flashing an error during the initial load before useBalances lands).
+  const insufficientBalance =
+    validAmount && !balancesLoading && numericAmount > selectedTokenBalance;
+  const canSubmit =
+    validAmount &&
+    !insufficientBalance &&
+    !!vault &&
+    !!quote &&
+    status !== "confirming" &&
+    status !== "quoting";
   const apy = vault?.analytics.apy.total ?? 0;
   const networkFeeUsd = quote
     ? parseFloat(quote.estimate.gasCosts[0]?.amountUSD ?? "0")
@@ -268,10 +288,15 @@ function DepositPageContent() {
               balanceLoading={balancesLoading}
             />
 
-            {status === "quoting" && validAmount && (
+            {insufficientBalance && (
+              <p className="text-center text-xs text-sprout-red-stop font-semibold">
+                You only have {selectedTokenBalance.toFixed(4)} {tokenSelection.symbol}
+              </p>
+            )}
+            {!insufficientBalance && status === "quoting" && validAmount && (
               <p className="text-center text-xs text-sprout-text-muted animate-pulse">Finding best rate...</p>
             )}
-            {quoteError && (
+            {!insufficientBalance && quoteError && (
               <p className="text-center text-xs text-red-500">{quoteError}</p>
             )}
           </div>
@@ -279,11 +304,17 @@ function DepositPageContent() {
           <div className="px-5 pb-8 pt-2 bg-sprout-gradient">
             <Button
               className="w-full"
-              disabled={!validAmount || !vault || !quote || status === "confirming" || status === "quoting"}
+              disabled={!canSubmit}
               loading={status === "quoting" || status === "confirming"}
               onClick={() => void handleConfirm()}
             >
-              {status === "quoting" ? "Finding best rate..." : status === "confirming" ? "Confirming..." : "Start Earning"}
+              {insufficientBalance
+                ? "Insufficient balance"
+                : status === "quoting"
+                ? "Finding best rate..."
+                : status === "confirming"
+                ? "Confirming..."
+                : "Start Earning"}
             </Button>
             <p className="text-center text-[11px] text-sprout-text-muted mt-4">Powered by LI.FI</p>
           </div>
@@ -330,7 +361,13 @@ function DepositPageContent() {
               />
             </Card>
 
-            {validAmount && vault && (
+            {insufficientBalance && (
+              <div className="bg-red-50 rounded-2xl px-4 py-3 text-sm text-red-600">
+                You only have {selectedTokenBalance.toFixed(4)} {tokenSelection.symbol} on{" "}
+                {CHAIN_NAMES[tokenSelection.chainId] ?? tokenSelection.chainId}.
+              </div>
+            )}
+            {!insufficientBalance && validAmount && vault && (
               <>
                 {status === "quoting" ? (
                   <div className="text-center py-4 text-sm text-sprout-text-muted animate-pulse">
@@ -367,11 +404,15 @@ function DepositPageContent() {
           <div className="px-5 pb-8 pt-2 bg-sprout-gradient">
             <Button
               className="w-full"
-              disabled={!validAmount || !vault || !quote || status === "confirming" || status === "quoting"}
+              disabled={!canSubmit}
               loading={status === "confirming"}
               onClick={() => void handleConfirm()}
             >
-              {status === "confirming" ? "Confirming…" : "Confirm"}
+              {insufficientBalance
+                ? "Insufficient balance"
+                : status === "confirming"
+                ? "Confirming…"
+                : "Confirm"}
             </Button>
             <p className="text-center text-[11px] text-sprout-text-muted mt-4">Powered by LI.FI</p>
           </div>
