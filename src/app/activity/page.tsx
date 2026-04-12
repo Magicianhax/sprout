@@ -1,33 +1,134 @@
 "use client";
 
-import { useRouter } from "next/navigation";
+import { useEffect, useMemo, useState } from "react";
 import { usePrivy } from "@privy-io/react-auth";
-import { useEffect } from "react";
+import { ChevronLeft, ChevronRight } from "lucide-react";
 import { AuthGuard } from "@/components/layout/AuthGuard";
 import { Header } from "@/components/layout/Header";
 import { BottomNav } from "@/components/layout/BottomNav";
 import { Button } from "@/components/ui/Button";
-import { PoweredByLifi } from "@/components/ui/PoweredByLifi";
-import { RecentActivity } from "@/components/home/RecentActivity";
-import { usePreferences } from "@/lib/hooks/usePreferences";
+import { ActivityRow } from "@/components/activity/ActivityRow";
+import { TokenFilterDropdown } from "@/components/activity/TokenFilterDropdown";
+import { ChainDropdown } from "@/components/vault/ChainDropdown";
+import { ProtocolDropdown } from "@/components/vault/ProtocolDropdown";
+import { ActivityDetailModal } from "@/components/portfolio/ActivityDetailModal";
 import { useActivity } from "@/lib/hooks/useActivity";
+import { useVaults } from "@/lib/hooks/useVaults";
+import {
+  classifyActivity,
+  cleanGroup,
+  type Classification,
+} from "@/lib/activity";
+import type { ActivityGroup } from "@/lib/types";
+
+const PAGE_SIZE = 10;
+
+interface ClassifiedGroup {
+  group: ActivityGroup;
+  classification: Classification;
+}
 
 function ActivityContent() {
-  const router = useRouter();
   const { user } = usePrivy();
-  const { preferences } = usePreferences();
   const address = user?.wallet?.address;
   const { records, loading, error, reload } = useActivity(address);
+  const { vaults } = useVaults();
 
-  // Activity is a pro-mode feature — lite users get bounced back home.
-  useEffect(() => {
-    if (preferences.mode === "lite") {
-      router.replace("/home");
+  const [selectedChains, setSelectedChains] = useState<number[]>([]);
+  const [selectedTokens, setSelectedTokens] = useState<string[]>([]);
+  const [selectedProtocols, setSelectedProtocols] = useState<string[]>([]);
+  const [page, setPage] = useState(1);
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+
+  // Clean + classify every group once per data/vault change
+  const classified = useMemo<ClassifiedGroup[]>(() => {
+    const cleaned = records
+      .map((g) => cleanGroup(g, vaults))
+      .filter((g) => g.transfers.length > 0);
+    return cleaned.map((g) => ({
+      group: g,
+      classification: classifyActivity(g, vaults),
+    }));
+  }, [records, vaults]);
+
+  // Filter option lists derived from the whole classified set so
+  // selecting a filter doesn't immediately drop the option from its
+  // own dropdown.
+  const availableChains = useMemo(() => {
+    const set = new Set<number>();
+    for (const c of classified) set.add(c.group.chainId);
+    return Array.from(set);
+  }, [classified]);
+
+  const availableTokens = useMemo(() => {
+    const set = new Set<string>();
+    for (const c of classified) set.add(c.classification.primary.token.symbol);
+    return Array.from(set);
+  }, [classified]);
+
+  const availableProtocols = useMemo(() => {
+    const set = new Set<string>();
+    for (const c of classified) {
+      const name = c.classification.vault?.protocol.name;
+      if (name) set.add(name);
     }
-  }, [preferences.mode, router]);
+    return Array.from(set);
+  }, [classified]);
+
+  const filtered = useMemo(() => {
+    return classified.filter((c) => {
+      if (
+        selectedChains.length > 0 &&
+        !selectedChains.includes(c.group.chainId)
+      ) {
+        return false;
+      }
+      if (
+        selectedTokens.length > 0 &&
+        !selectedTokens.includes(c.classification.primary.token.symbol)
+      ) {
+        return false;
+      }
+      if (selectedProtocols.length > 0) {
+        const proto = c.classification.vault?.protocol.name;
+        if (!proto || !selectedProtocols.includes(proto)) return false;
+      }
+      return true;
+    });
+  }, [classified, selectedChains, selectedTokens, selectedProtocols]);
+
+  const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
+
+  // Reset to page 1 when filters change
+  useEffect(() => {
+    setPage(1);
+  }, [selectedChains, selectedTokens, selectedProtocols]);
+
+  // Clamp the page if the list shrinks
+  useEffect(() => {
+    if (page > totalPages) setPage(totalPages);
+  }, [page, totalPages]);
+
+  const paged = useMemo(
+    () => filtered.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE),
+    [filtered, page]
+  );
+
+  const selectedEntry = filtered.find((e) => e.group.id === selectedId) ?? null;
+
+  const hasActiveFilters =
+    selectedChains.length > 0 ||
+    selectedTokens.length > 0 ||
+    selectedProtocols.length > 0;
+
+  function clearFilters() {
+    setSelectedChains([]);
+    setSelectedTokens([]);
+    setSelectedProtocols([]);
+  }
 
   return (
-    <main className="min-h-dvh bg-sprout-gradient pb-28">
+    <main className="min-h-dvh bg-sprout-gradient pb-32">
       <Header />
 
       <div className="flex items-end justify-between gap-3 px-5 pt-5 pb-4">
@@ -48,17 +149,101 @@ function ActivityContent() {
         </Button>
       </div>
 
-      <div className="mt-1">
-        <RecentActivity records={records} loading={loading} error={error} />
+      {/* Filters */}
+      <div className="flex items-center gap-2 flex-wrap px-5 mb-4">
+        <ProtocolDropdown
+          available={availableProtocols}
+          selected={selectedProtocols}
+          onChange={setSelectedProtocols}
+        />
+        <TokenFilterDropdown
+          available={availableTokens}
+          selected={selectedTokens}
+          onChange={setSelectedTokens}
+        />
+        <ChainDropdown
+          selected={selectedChains}
+          onChange={setSelectedChains}
+        />
+        {hasActiveFilters && (
+          <button
+            type="button"
+            onClick={clearFilters}
+            className="text-[11px] font-semibold text-sprout-green-dark cursor-pointer"
+          >
+            Clear
+          </button>
+        )}
       </div>
 
-      <p className="mx-5 mt-5 text-[10px] text-sprout-text-muted leading-relaxed">
-        Shows transfers routed through LI.FI. Direct vault withdrawals appear
-        on the block explorer linked in the withdrawal confirmation.
+      {loading && classified.length === 0 ? (
+        <div className="mx-5 text-sm text-sprout-text-muted animate-pulse">
+          Loading activity…
+        </div>
+      ) : error ? (
+        <div className="mx-5 text-sm text-sprout-red-stop">
+          Couldn&apos;t load activity — {error}
+        </div>
+      ) : filtered.length === 0 ? (
+        <div className="mx-5 text-center text-sm text-sprout-text-muted py-10">
+          {hasActiveFilters
+            ? "No activity matches the selected filters."
+            : "No activity yet. Your deposits and transfers will show up here."}
+        </div>
+      ) : (
+        <>
+          <div className="flex flex-col gap-2 px-5">
+            {paged.map(({ group, classification }) => (
+              <ActivityRow
+                key={group.id}
+                group={group}
+                classification={classification}
+                onSelect={setSelectedId}
+              />
+            ))}
+          </div>
+
+          {totalPages > 1 && (
+            <div className="flex items-center justify-center gap-3 px-5 mt-5">
+              <button
+                type="button"
+                onClick={() => setPage((p) => Math.max(1, p - 1))}
+                disabled={page === 1}
+                className="flex items-center justify-center w-9 h-9 rounded-full bg-sprout-card border border-sprout-border shadow-subtle text-sprout-text-primary disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer"
+                aria-label="Previous page"
+              >
+                <ChevronLeft size={18} />
+              </button>
+              <span className="text-xs font-semibold text-sprout-text-secondary">
+                Page {page} of {totalPages}
+              </span>
+              <button
+                type="button"
+                onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+                disabled={page === totalPages}
+                className="flex items-center justify-center w-9 h-9 rounded-full bg-sprout-card border border-sprout-border shadow-subtle text-sprout-text-primary disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer"
+                aria-label="Next page"
+              >
+                <ChevronRight size={18} />
+              </button>
+            </div>
+          )}
+        </>
+      )}
+
+      <p className="mx-5 mt-6 text-[10px] text-sprout-text-muted leading-relaxed">
+        Shows activity across supported chains. Spam airdrops are filtered
+        out. Tap any row for details.
       </p>
 
-      <PoweredByLifi className="pt-6 pb-5" />
       <BottomNav />
+
+      <ActivityDetailModal
+        open={selectedEntry !== null}
+        onClose={() => setSelectedId(null)}
+        group={selectedEntry?.group ?? null}
+        classification={selectedEntry?.classification ?? null}
+      />
     </main>
   );
 }

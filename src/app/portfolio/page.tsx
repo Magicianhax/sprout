@@ -12,7 +12,6 @@ import { WalletActionBar } from "@/components/portfolio/WalletActionBar";
 import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
 import { PositionCardSkeleton, WalletBalanceCardSkeleton } from "@/components/ui/CardSkeletons";
-import { PoweredByLifi } from "@/components/ui/PoweredByLifi";
 import { TransactionModal } from "@/components/deposit/TransactionModal";
 import { usePreferences } from "@/lib/hooks/usePreferences";
 import { usePositions } from "@/lib/hooks/usePositions";
@@ -177,7 +176,6 @@ function PortfolioContent() {
         </>
       )}
 
-      <PoweredByLifi className="pb-5" />
       <BottomNav />
 
       <TransactionModal

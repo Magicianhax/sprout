@@ -1,219 +1,54 @@
 "use client";
 
-import { useState } from "react";
-import { ExternalLink } from "lucide-react";
-import { TokenIcon } from "@/components/ui/TokenIcon";
-import { ActivityDetailModal } from "@/components/portfolio/ActivityDetailModal";
-import { CHAIN_NAMES } from "@/lib/constants";
-import { displayProtocol } from "@/lib/protocols";
+import { useMemo, useState } from "react";
+import { useRouter } from "next/navigation";
 import { useVaults } from "@/lib/hooks/useVaults";
-import type { ActivityGroup, Vault, WalletTransfer } from "@/lib/types";
+import { ActivityRow } from "@/components/activity/ActivityRow";
+import { ActivityDetailModal } from "@/components/portfolio/ActivityDetailModal";
+import {
+  classifyActivity,
+  cleanGroup,
+  type Classification,
+} from "@/lib/activity";
+import type { ActivityGroup } from "@/lib/types";
+
+const HOME_LIMIT = 5;
 
 interface RecentActivityProps {
   records: ActivityGroup[];
   loading?: boolean;
   error?: string | null;
+  /**
+   * When true, caps the list and shows a "View all" link to /activity.
+   * Defaults to false (caller handles slicing/pagination).
+   */
+  compact?: boolean;
 }
 
-type ActivityKind =
-  | "deposit"
-  | "withdraw"
-  | "swap"
-  | "bridge"
-  | "send"
-  | "receive";
-
-interface Classification {
-  kind: ActivityKind;
-  label: string;
-  subLabel: string;
-  primary: WalletTransfer;
-  vault?: Vault;
+interface ClassifiedGroup {
+  group: ActivityGroup;
+  classification: Classification;
 }
 
-function formatAmount(amount: string, decimals: number): string {
-  try {
-    const big = BigInt(amount);
-    const divisor = BigInt(10) ** BigInt(decimals);
-    const whole = big / divisor;
-    const frac = big % divisor;
-    // 4 significant fractional digits
-    const fracScaled = (Number(frac) / Number(divisor)).toFixed(4).slice(2);
-    return `${whole.toString()}.${fracScaled}`;
-  } catch {
-    return "—";
-  }
-}
-
-function formatRelativeTime(unixSeconds: number): string {
-  const now = Math.floor(Date.now() / 1000);
-  const diff = Math.max(0, now - unixSeconds);
-  if (diff < 60) return "just now";
-  if (diff < 3600) return `${Math.floor(diff / 60)}m ago`;
-  if (diff < 86400) return `${Math.floor(diff / 3600)}h ago`;
-  if (diff < 86400 * 7) return `${Math.floor(diff / 86400)}d ago`;
-  const date = new Date(unixSeconds * 1000);
-  return date.toLocaleDateString(undefined, { month: "short", day: "numeric" });
-}
-
-function findVaultByAddress(
-  vaults: Vault[],
-  chainId: number,
-  address: string | null
-): Vault | undefined {
-  if (!address) return undefined;
-  const target = address.toLowerCase();
-  return vaults.find(
-    (v) => v.chainId === chainId && v.address.toLowerCase() === target
-  );
-}
-
-// Whitelist of symbols we consider "real" beyond the vault cache.
-// Stables, major wrappers, liquid staking. Case-insensitive.
-const KNOWN_TOKEN_SYMBOLS = new Set([
-  "ETH",
-  "POL",
-  "MATIC",
-  "WETH",
-  "WBTC",
-  "USDC",
-  "USDC.E",
-  "USDT",
-  "USDT0",
-  "DAI",
-  "USDS",
-  "FRAX",
-  "LUSD",
-  "CRVUSD",
-  "GHO",
-  "PYUSD",
-  "TUSD",
-  "STETH",
-  "WSTETH",
-  "CBETH",
-  "CBBTC",
-  "RETH",
-  "WEETH",
-  "EETH",
-]);
-
-function isRecognizedTransfer(t: WalletTransfer, vaults: Vault[]): boolean {
-  // Native chain token is always fine
-  if (t.token.address === null) return true;
-  // Known token symbol
-  if (KNOWN_TOKEN_SYMBOLS.has(t.token.symbol.toUpperCase())) return true;
-  // Vault share token (from the useVaults cache)
-  if (findVaultByAddress(vaults, t.chainId, t.token.address)) return true;
-  // Counterparty is a vault contract (e.g. direct deposit)
-  if (findVaultByAddress(vaults, t.chainId, t.counterparty)) return true;
-  return false;
-}
-
-
-function classify(group: ActivityGroup, vaults: Vault[]): Classification {
-  const transfers = group.transfers;
-  const chainName = CHAIN_NAMES[group.chainId] ?? `Chain ${group.chainId}`;
-
-  // --- Detect vault interactions ---
-  // A deposit shows up as: outflow of underlying + inflow of share token.
-  // A withdraw shows up as: outflow of share token + inflow of underlying.
-  // Either side is enough to identify the vault.
-  for (const t of transfers) {
-    // Match by token (share token itself is the vault address)
-    const vaultByToken = findVaultByAddress(vaults, t.chainId, t.token.address);
-    if (vaultByToken) {
-      if (t.direction === "in") {
-        // shares minted to user → deposit
-        const underlying =
-          transfers.find((x) => x.direction === "out" && x !== t) ?? t;
-        return {
-          kind: "deposit",
-          label: `Deposited into ${displayProtocol(vaultByToken.protocol.name)}`,
-          subLabel: chainName,
-          primary: underlying,
-          vault: vaultByToken,
-        };
-      }
-      // shares burned from user → withdraw
-      const underlying =
-        transfers.find((x) => x.direction === "in" && x !== t) ?? t;
-      return {
-        kind: "withdraw",
-        label: `Withdrew from ${displayProtocol(vaultByToken.protocol.name)}`,
-        subLabel: chainName,
-        primary: underlying,
-        vault: vaultByToken,
-      };
-    }
-
-    // Match by counterparty (direct interaction with vault contract)
-    const vaultByCounter = findVaultByAddress(
-      vaults,
-      t.chainId,
-      t.counterparty
-    );
-    if (vaultByCounter) {
-      if (t.direction === "out") {
-        return {
-          kind: "deposit",
-          label: `Deposited into ${displayProtocol(vaultByCounter.protocol.name)}`,
-          subLabel: chainName,
-          primary: t,
-          vault: vaultByCounter,
-        };
-      }
-      return {
-        kind: "withdraw",
-        label: `Withdrew from ${displayProtocol(vaultByCounter.protocol.name)}`,
-        subLabel: chainName,
-        primary: t,
-        vault: vaultByCounter,
-      };
-    }
-  }
-
-  // --- Not a vault tx ---
-  // If the group has both an outflow and an inflow of different tokens,
-  // it's a swap (same chain) or looks like one. Otherwise it's a plain
-  // send/receive.
-  const outs = transfers.filter((t) => t.direction === "out");
-  const ins = transfers.filter((t) => t.direction === "in");
-
-  if (outs.length > 0 && ins.length > 0) {
-    const out = outs[0];
-    const inc = ins[0];
-    if (out.token.symbol !== inc.token.symbol) {
-      return {
-        kind: "swap",
-        label: `${out.token.symbol} → ${inc.token.symbol}`,
-        subLabel: chainName,
-        primary: out,
-      };
-    }
-  }
-
-  if (outs.length > 0) {
-    const out = outs[0];
-    return {
-      kind: "send",
-      label: `Sent ${out.token.symbol}`,
-      subLabel: chainName,
-      primary: out,
-    };
-  }
-
-  const inc = ins[0] ?? transfers[0];
-  return {
-    kind: "receive",
-    label: `Received ${inc.token.symbol}`,
-    subLabel: chainName,
-    primary: inc,
-  };
-}
-
-export function RecentActivity({ records, loading, error }: RecentActivityProps) {
+export function RecentActivity({
+  records,
+  loading,
+  error,
+  compact = false,
+}: RecentActivityProps) {
+  const router = useRouter();
   const { vaults } = useVaults();
   const [selectedId, setSelectedId] = useState<string | null>(null);
+
+  const visible = useMemo<ClassifiedGroup[]>(() => {
+    const cleaned = records
+      .map((g) => cleanGroup(g, vaults))
+      .filter((g) => g.transfers.length > 0);
+    return cleaned.map((g) => ({
+      group: g,
+      classification: classifyActivity(g, vaults),
+    }));
+  }, [records, vaults]);
 
   if (loading) {
     return (
@@ -231,17 +66,7 @@ export function RecentActivity({ records, loading, error }: RecentActivityProps)
     );
   }
 
-  // Filter out groups that have no recognizable transfers. Also strip
-  // unrecognized transfers *inside* each group so the classifier never
-  // picks a spam row as the "primary" display transfer.
-  const visibleGroups = records
-    .map((g) => ({
-      ...g,
-      transfers: g.transfers.filter((t) => isRecognizedTransfer(t, vaults)),
-    }))
-    .filter((g) => g.transfers.length > 0);
-
-  if (visibleGroups.length === 0) {
+  if (visible.length === 0) {
     return (
       <div className="mx-5 text-center text-sm text-sprout-text-muted py-6">
         No activity yet. Your deposits and transfers will show up here.
@@ -249,122 +74,41 @@ export function RecentActivity({ records, loading, error }: RecentActivityProps)
     );
   }
 
+  const shown = compact ? visible.slice(0, HOME_LIMIT) : visible;
+  const hasMore = compact && visible.length > HOME_LIMIT;
+  const selectedEntry = visible.find((v) => v.group.id === selectedId) ?? null;
+
   return (
     <div className="mx-5">
       <h3 className="text-sm font-semibold text-sprout-text-secondary mb-3">
         Recent Activity
       </h3>
       <div className="flex flex-col gap-2">
-        {visibleGroups.map((group) => {
-          const { kind, label, subLabel, primary, vault } = classify(
-            group,
-            vaults
-          );
-
-          const amount = formatAmount(primary.amount, primary.token.decimals);
-          const amountPrefix =
-            kind === "deposit" || kind === "send" || kind === "swap"
-              ? "-"
-              : kind === "withdraw" || kind === "receive"
-              ? "+"
-              : "";
-
-          const amountTone =
-            kind === "withdraw" || kind === "receive"
-              ? "text-sprout-green-dark"
-              : "text-sprout-text-primary";
-
-          // Chain badge overlay bottom-right of the token icon — matches
-          // VaultCard/PositionCard. Kind is conveyed by the label verb
-          // and the amount color, so we don't double up with another
-          // overlay badge.
-          return (
-            <div
-              key={group.id}
-              role="button"
-              tabIndex={0}
-              onClick={() => setSelectedId(group.id)}
-              onKeyDown={(e) => {
-                if (e.key === "Enter" || e.key === " ") {
-                  e.preventDefault();
-                  setSelectedId(group.id);
-                }
-              }}
-              className="flex items-center gap-3 bg-sprout-card rounded-2xl px-4 py-3 shadow-subtle cursor-pointer transition-transform active:scale-[0.99]"
-            >
-              <div className="relative shrink-0">
-                <TokenIcon
-                  type="token"
-                  identifier={primary.token.symbol}
-                  size={38}
-                />
-                <div
-                  className="absolute -bottom-1 -right-1 rounded-full border-2 border-sprout-card overflow-hidden"
-                  style={{ width: 16, height: 16 }}
-                  aria-label={CHAIN_NAMES[group.chainId] ?? `Chain ${group.chainId}`}
-                >
-                  <TokenIcon
-                    type="chain"
-                    identifier={group.chainId}
-                    size={16}
-                  />
-                </div>
-              </div>
-
-              <div className="flex-1 min-w-0">
-                <div className="flex items-center gap-1.5 min-w-0">
-                  {vault && (
-                    <TokenIcon
-                      type="protocol"
-                      identifier={vault.protocol.name}
-                      size={14}
-                    />
-                  )}
-                  <p className="text-sm font-semibold text-sprout-text-primary truncate">
-                    {label}
-                  </p>
-                </div>
-                <p className="text-[11px] text-sprout-text-muted truncate">
-                  {subLabel} · {formatRelativeTime(group.timestamp)}
-                </p>
-              </div>
-
-              <div className="text-right shrink-0">
-                <p className={`text-sm font-bold ${amountTone}`}>
-                  {amountPrefix}
-                  {amount} {primary.token.symbol}
-                </p>
-              </div>
-
-              <a
-                href={group.explorerUrl}
-                target="_blank"
-                rel="noopener noreferrer"
-                onClick={(e) => e.stopPropagation()}
-                className="p-1.5 -m-1.5 text-sprout-text-muted hover:text-sprout-green-dark transition-colors shrink-0"
-                aria-label="Open transaction in block explorer"
-              >
-                <ExternalLink size={14} />
-              </a>
-            </div>
-          );
-        })}
+        {shown.map(({ group, classification }) => (
+          <ActivityRow
+            key={group.id}
+            group={group}
+            classification={classification}
+            onSelect={setSelectedId}
+          />
+        ))}
       </div>
 
+      {hasMore && (
+        <button
+          type="button"
+          onClick={() => router.push("/activity")}
+          className="mt-3 w-full text-center text-xs font-semibold text-sprout-green-dark py-2 cursor-pointer"
+        >
+          View all activity →
+        </button>
+      )}
+
       <ActivityDetailModal
-        open={selectedId !== null}
+        open={selectedEntry !== null}
         onClose={() => setSelectedId(null)}
-        group={visibleGroups.find((g) => g.id === selectedId) ?? null}
-        classification={
-          selectedId
-            ? (() => {
-                const g = visibleGroups.find((x) => x.id === selectedId);
-                if (!g) return null;
-                const { kind, label, primary, vault } = classify(g, vaults);
-                return { kind, label, primary, vault };
-              })()
-            : null
-        }
+        group={selectedEntry?.group ?? null}
+        classification={selectedEntry?.classification ?? null}
       />
     </div>
   );

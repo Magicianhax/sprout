@@ -9,7 +9,6 @@ import { Header } from "@/components/layout/Header";
 import { BottomNav } from "@/components/layout/BottomNav";
 import { Card } from "@/components/ui/Card";
 import { Toggle } from "@/components/ui/Toggle";
-import { PoweredByLifi } from "@/components/ui/PoweredByLifi";
 import { AboutModal } from "@/components/settings/AboutModal";
 import { usePreferences } from "@/lib/hooks/usePreferences";
 
@@ -244,7 +243,6 @@ function SettingsContent() {
         </button>
       </div>
 
-      <PoweredByLifi className="pb-5" />
       <BottomNav />
 
       <AboutModal open={aboutOpen} onClose={() => setAboutOpen(false)} />

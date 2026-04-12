@@ -20,7 +20,6 @@ import { ChevronLeft, ChevronRight, Search, X } from "lucide-react";
 import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
 import { BalanceHeroSkeleton, VaultCardSkeleton } from "@/components/ui/CardSkeletons";
-import { PoweredByLifi } from "@/components/ui/PoweredByLifi";
 import { usePreferences } from "@/lib/hooks/usePreferences";
 import { usePositions } from "@/lib/hooks/usePositions";
 import { useVaults } from "@/lib/hooks/useVaults";
@@ -104,6 +103,7 @@ function LiteHome() {
             records={activity.records}
             loading={activity.loading}
             error={activity.error}
+            compact
           />
         </div>
       ) : (
@@ -113,7 +113,6 @@ function LiteHome() {
         </>
       )}
 
-      <PoweredByLifi className="pb-5" />
       <BottomNav />
     </main>
   );
@@ -351,7 +350,6 @@ function ProHome() {
         </>
       )}
 
-      <PoweredByLifi className="pb-5" />
       <BottomNav />
     </main>
   );
