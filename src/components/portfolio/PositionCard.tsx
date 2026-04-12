@@ -8,37 +8,12 @@ import { TokenIcon } from "@/components/ui/TokenIcon";
 import { formatCurrency, formatPercent } from "@/lib/format";
 import { CHAIN_NAMES } from "@/lib/constants";
 import { fetchVaults } from "@/lib/api/earn";
+import { displayProtocol } from "@/lib/protocols";
 import type { Position } from "@/lib/types";
 
 interface PositionCardProps {
   position: Position;
   showDetails: boolean;
-}
-
-// Protocol display name mapping for cleaner display
-const PROTOCOL_DISPLAY_NAMES: Record<string, string> = {
-  "aave-v3": "Aave V3",
-  "morpho-v1": "Morpho",
-  "morpho-v2": "Morpho V2",
-  "euler-v2": "Euler V2",
-  "pendle": "Pendle",
-  "lido-wsteth": "Lido",
-  "ether.fi-stake": "EtherFi",
-  "ether.fi-liquid": "EtherFi Liquid",
-  "ethena-usde": "Ethena",
-  "felix-vanilla": "Felix",
-  "hyperlend": "HyperLend",
-  "maple": "Maple",
-  "neverland": "Neverland",
-  "usdai": "USDai",
-  "seamless": "Seamless",
-  "kinetiq": "Kinetiq",
-  "upshift": "Upshift",
-  "yo-protocol": "YO Protocol",
-};
-
-function displayProtocol(name: string): string {
-  return PROTOCOL_DISPLAY_NAMES[name] ?? name;
 }
 
 export function PositionCard({ position }: PositionCardProps) {

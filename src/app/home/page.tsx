@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { usePrivy } from "@privy-io/react-auth";
 import { AuthGuard } from "@/components/layout/AuthGuard";
@@ -13,7 +13,9 @@ import { TrustBadges } from "@/components/home/TrustBadges";
 import { RecentActivity } from "@/components/home/RecentActivity";
 import { VaultCard } from "@/components/vault/VaultCard";
 import { ChainDropdown } from "@/components/vault/ChainDropdown";
+import { ProtocolDropdown } from "@/components/vault/ProtocolDropdown";
 import { SortToggle } from "@/components/vault/SortToggle";
+import { ChevronLeft, ChevronRight } from "lucide-react";
 import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
 import { Skeleton } from "@/components/ui/Skeleton";
@@ -127,6 +129,7 @@ function ProHome() {
   const { totalBalance, positions } = usePositions(address);
 
   const [selectedChains, setSelectedChains] = useState<number[]>([]);
+  const [selectedProtocols, setSelectedProtocols] = useState<string[]>([]);
   const [sortBy, setSortBy] = useState<SortBy>("tvl");
   const [assetFilter, setAssetFilter] = useState<string>("all");
 
@@ -134,6 +137,43 @@ function ProHome() {
     chainIds: selectedChains.length > 0 ? selectedChains : undefined,
     sortBy,
   });
+
+  const assetFilteredVaults = useMemo(
+    () => filterVaultsByAsset(vaults, assetFilter),
+    [vaults, assetFilter]
+  );
+
+  // Derive protocol list from vaults already narrowed by chain + asset filters
+  const availableProtocols = useMemo(() => {
+    const set = new Set<string>();
+    for (const v of assetFilteredVaults) set.add(v.protocol.name);
+    return Array.from(set);
+  }, [assetFilteredVaults]);
+
+  const visibleVaults = useMemo(() => {
+    if (selectedProtocols.length === 0) return assetFilteredVaults;
+    const set = new Set(selectedProtocols);
+    return assetFilteredVaults.filter((v) => set.has(v.protocol.name));
+  }, [assetFilteredVaults, selectedProtocols]);
+
+  const PAGE_SIZE = 10;
+  const [page, setPage] = useState(1);
+  const totalPages = Math.max(1, Math.ceil(visibleVaults.length / PAGE_SIZE));
+
+  // Reset to first page when filters/sort change
+  useEffect(() => {
+    setPage(1);
+  }, [selectedChains, selectedProtocols, sortBy, assetFilter]);
+
+  // Clamp page if list shrinks
+  useEffect(() => {
+    if (page > totalPages) setPage(totalPages);
+  }, [page, totalPages]);
+
+  const pagedVaults = useMemo(
+    () => visibleVaults.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE),
+    [visibleVaults, page]
+  );
 
   return (
     <main className="min-h-dvh bg-sprout-gradient pb-28">
@@ -154,12 +194,19 @@ function ProHome() {
       )}
 
       {/* Filter row */}
-      <div className="flex items-center gap-2 px-5 mt-4 mb-3">
-        <span className="font-heading text-base font-700 text-sprout-text-primary flex-1">
+      <div className="px-5 mt-4 mb-3">
+        <p className="font-heading text-base font-700 text-sprout-text-primary mb-2">
           Opportunities
-        </span>
-        <ChainDropdown selected={selectedChains} onChange={setSelectedChains} />
-        <SortToggle value={sortBy} onChange={setSortBy} />
+        </p>
+        <div className="flex items-center gap-2 flex-wrap">
+          <ProtocolDropdown
+            available={availableProtocols}
+            selected={selectedProtocols}
+            onChange={setSelectedProtocols}
+          />
+          <ChainDropdown selected={selectedChains} onChange={setSelectedChains} />
+          <SortToggle value={sortBy} onChange={setSortBy} />
+        </div>
       </div>
 
       {/* Asset filter pills */}
@@ -191,22 +238,48 @@ function ProHome() {
           <p className="text-sprout-text-secondary mb-3">Couldn&apos;t load opportunities</p>
           <Button variant="secondary" onClick={reload}>Try again</Button>
         </Card>
-      ) : vaults.length === 0 ? (
+      ) : visibleVaults.length === 0 ? (
         <div className="mx-5 mt-4 text-center text-sm text-sprout-text-muted py-10">
           No vaults found for selected filters.
         </div>
       ) : (
-        <div className="flex flex-col gap-3">
-          {filterVaultsByAsset(vaults, assetFilter).map((vault) => (
-            <VaultCard
-              key={`${vault.chainId}-${vault.address}`}
-              vault={vault}
-              onClick={() =>
-                router.push(`/vault/${vault.address}?chainId=${vault.chainId}`)
-              }
-            />
-          ))}
-        </div>
+        <>
+          <div className="flex flex-col gap-3">
+            {pagedVaults.map((vault) => (
+              <VaultCard
+                key={`${vault.chainId}-${vault.address}`}
+                vault={vault}
+                onClick={() =>
+                  router.push(`/vault/${vault.address}?chainId=${vault.chainId}`)
+                }
+              />
+            ))}
+          </div>
+
+          {totalPages > 1 && (
+            <div className="flex items-center justify-center gap-3 px-5 mt-5">
+              <button
+                onClick={() => setPage((p) => Math.max(1, p - 1))}
+                disabled={page === 1}
+                className="flex items-center justify-center w-9 h-9 rounded-full bg-white border border-sprout-border shadow-subtle text-sprout-text-primary disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer"
+                aria-label="Previous page"
+              >
+                <ChevronLeft size={18} />
+              </button>
+              <span className="text-xs font-semibold text-sprout-text-secondary">
+                Page {page} of {totalPages}
+              </span>
+              <button
+                onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+                disabled={page === totalPages}
+                className="flex items-center justify-center w-9 h-9 rounded-full bg-white border border-sprout-border shadow-subtle text-sprout-text-primary disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer"
+                aria-label="Next page"
+              >
+                <ChevronRight size={18} />
+              </button>
+            </div>
+          )}
+        </>
       )}
 
       <BottomNav />
