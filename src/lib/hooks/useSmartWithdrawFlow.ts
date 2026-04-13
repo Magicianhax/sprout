@@ -76,12 +76,17 @@ export function useSmartWithdrawFlow() {
   const mountedRef = useRef(true);
   const inFlightRef = useRef(false);
 
-  useEffect(
-    () => () => {
+  // Correctly track mounted state across React strict-mode double-
+  // invocations: set to true on every effect run, false only on the
+  // real unmount cleanup. A cleanup-only effect would flip the ref
+  // to false on the strict-mode simulated remount and never reset
+  // it, silently dropping every setState that followed.
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
       mountedRef.current = false;
-    },
-    []
-  );
+    };
+  }, []);
 
   const safeSetState = useCallback(
     (
