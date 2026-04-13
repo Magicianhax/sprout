@@ -261,16 +261,6 @@ function VaultDetailContent({ vault, chainId }: { vault: Vault; chainId: number 
           </div>
         </div>
 
-        {/* Start Earning CTA — only if no position */}
-        {!hasPosition && (
-          <Button
-            variant="primary"
-            className="w-full"
-            onClick={handleEarnMore}
-          >
-            Start Earning
-          </Button>
-        )}
 
         <PoweredByLifi className="pt-4 pb-2" />
       </div>

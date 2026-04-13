@@ -26,7 +26,12 @@ import { DepositPreview } from "@/components/deposit/DepositPreview";
 import { usePreferences } from "@/lib/hooks/usePreferences";
 import { getDepositQuote } from "@/lib/api/composer";
 import { fetchVaults } from "@/lib/api/earn";
-import { toTokenUnits } from "@/lib/format";
+import {
+  dailyEarnings,
+  formatCurrency,
+  monthlyEarnings,
+  toTokenUnits,
+} from "@/lib/format";
 import { SUPPORTED_TOKENS, CHAIN_NAMES } from "@/lib/constants";
 import type { ComposerQuote, Vault } from "@/lib/types";
 
@@ -406,6 +411,44 @@ function DepositPageContent() {
             {!insufficientBalance && !insufficientGas && quoteError && (
               <p className="text-center text-xs text-red-500">{quoteError}</p>
             )}
+
+            {/* Earnings projection — only when we have a valid amount
+                and a resolved vault. Keeps the Lite flow celebratory:
+                the user sees what the number turns into before they
+                tap Start Earning. */}
+            {!insufficientBalance &&
+              !insufficientGas &&
+              !quoteError &&
+              validAmount &&
+              vault &&
+              apy > 0 && (
+                <div className="mx-2 bg-sprout-green-light/50 rounded-2xl px-5 py-4">
+                  <p className="text-center text-[11px] font-bold uppercase tracking-wider text-sprout-green-dark">
+                    You&apos;ll earn about
+                  </p>
+                  <p className="text-center font-heading text-2xl font-800 text-sprout-text-primary mt-1">
+                    {formatCurrency(numericAmount * (apy / 100))}
+                  </p>
+                  <p className="text-center text-[11px] text-sprout-text-muted mt-0.5">
+                    per year at {apy.toFixed(1)}%
+                  </p>
+                  <div className="flex items-center justify-around mt-3 pt-3 border-t border-sprout-border">
+                    <div className="text-center">
+                      <p className="text-[10px] text-sprout-text-muted">per day</p>
+                      <p className="text-sm font-bold text-sprout-text-primary mt-0.5">
+                        {formatCurrency(dailyEarnings(numericAmount, apy))}
+                      </p>
+                    </div>
+                    <div className="w-px h-8 bg-sprout-border" />
+                    <div className="text-center">
+                      <p className="text-[10px] text-sprout-text-muted">per month</p>
+                      <p className="text-sm font-bold text-sprout-text-primary mt-0.5">
+                        {formatCurrency(monthlyEarnings(numericAmount, apy))}
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              )}
           </div>
 
           <div className="px-5 pb-8 pt-2 bg-sprout-gradient">
