@@ -1,6 +1,10 @@
-# Sprout
+<p align="center">
+  <img src="public/icon-512.png" alt="Sprout logo" width="128" height="128" />
+</p>
 
-> Your money, growing every day.
+<h1 align="center">Sprout</h1>
+
+<p align="center"><em>Your money, growing every day.</em></p>
 
 Sprout is a Progressive Web App that makes earning DeFi yield as simple as opening a savings account. Built for the **LI.FI DeFi Mullet Hackathon** (DeFi UX Challenge track), Sprout is a "savings app that happens to be DeFi" — it hides the complexity of chains, bridges, vaults, and share tokens behind a warm, one-tap UX, and reveals the plumbing on demand through a Pro mode.
 
