@@ -1,4 +1,5 @@
 import type { Metadata, Viewport } from "next";
+import { Analytics } from "@vercel/analytics/next";
 import { PrivyProvider } from "@/components/providers/PrivyProvider";
 import { ThemeSync } from "@/components/providers/ThemeSync";
 import { ServiceWorkerRegister } from "@/components/providers/ServiceWorkerRegister";
@@ -47,6 +48,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
           <InstallPrompt />
           {children}
         </PrivyProvider>
+        <Analytics />
       </body>
     </html>
   );
