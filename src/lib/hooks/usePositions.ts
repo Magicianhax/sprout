@@ -31,10 +31,11 @@ function subscribe(address: string, cb: (positions: Position[]) => void): () => 
   };
 }
 
-// Drop positions whose USD value rounds to dust — they clutter the UI,
-// skew avg-APY calculations, and can't meaningfully be withdrawn
-// (gas would dwarf the amount).
-const DUST_THRESHOLD_USD = 0.01;
+// Drop positions whose USD value is below dust threshold — they clutter
+// the UI, skew avg-APY calculations, and can't meaningfully be
+// withdrawn (gas would dwarf the amount). Anything below 5 cents is
+// effectively noise.
+const DUST_THRESHOLD_USD = 0.05;
 
 async function loadPositions(address: string): Promise<Position[]> {
   const existing = inflight.get(address);

@@ -62,7 +62,15 @@ export function SmartWithdrawModal({
   if (!open) return null;
 
   function setPercent(pct: number) {
-    const value = Number((totalEarningUsd * pct).toFixed(2));
+    // MAX uses the exact full precision so validAmount's
+    // `<= totalEarningUsd` check can never fail due to display
+    // rounding up. Lower percents floor to 2 decimals so the input
+    // stays pretty without ever exceeding the available balance.
+    if (pct >= 0.999) {
+      setAmount(String(totalEarningUsd));
+      return;
+    }
+    const value = Math.floor(totalEarningUsd * pct * 100) / 100;
     setAmount(String(value));
   }
 
