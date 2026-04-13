@@ -363,6 +363,27 @@ function DepositPageContent() {
               balanceLoading={balancesLoading}
             />
 
+            {selectedTokenBalance > 0 && (
+              <div className="flex items-center gap-2 px-4">
+                {[0.25, 0.5, 0.75, 1].map((pct) => (
+                  <button
+                    key={pct}
+                    type="button"
+                    onClick={() =>
+                      setAmount(
+                        String(
+                          Number((selectedTokenBalance * pct).toFixed(6))
+                        )
+                      )
+                    }
+                    className="flex-1 py-2 rounded-pill text-[11px] font-bold bg-sprout-green-light text-sprout-green-dark cursor-pointer active:scale-[0.97] transition-transform"
+                  >
+                    {pct === 1 ? "MAX" : `${pct * 100}%`}
+                  </button>
+                ))}
+              </div>
+            )}
+
             {insufficientBalance && (
               <p className="text-center text-xs text-sprout-red-stop font-semibold">
                 You only have {selectedTokenBalance.toFixed(4)} {tokenSelection.symbol}

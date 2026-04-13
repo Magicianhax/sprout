@@ -31,6 +31,11 @@ function subscribe(address: string, cb: (positions: Position[]) => void): () => 
   };
 }
 
+// Drop positions whose USD value rounds to dust — they clutter the UI,
+// skew avg-APY calculations, and can't meaningfully be withdrawn
+// (gas would dwarf the amount).
+const DUST_THRESHOLD_USD = 0.01;
+
 async function loadPositions(address: string): Promise<Position[]> {
   const existing = inflight.get(address);
   if (existing) return existing;
@@ -42,10 +47,14 @@ async function loadPositions(address: string): Promise<Position[]> {
           p.chainId as typeof SUPPORTED_CHAIN_IDS[number]
         )
       );
-      cache.set(address, supported);
+      const meaningful = supported.filter((p) => {
+        const usd = parseFloat(p.balanceUsd || "0");
+        return Number.isFinite(usd) && usd >= DUST_THRESHOLD_USD;
+      });
+      cache.set(address, meaningful);
       inflight.delete(address);
       notify(address);
-      return supported;
+      return meaningful;
     })
     .catch((err) => {
       inflight.delete(address);
