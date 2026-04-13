@@ -363,26 +363,32 @@ function DepositPageContent() {
               balanceLoading={balancesLoading}
             />
 
-            {selectedTokenBalance > 0 && (
-              <div className="flex items-center gap-2 px-4">
-                {[0.25, 0.5, 0.75, 1].map((pct) => (
+            <div className="flex items-center gap-2 px-2">
+              {[0.25, 0.5, 0.75, 1].map((pct) => {
+                const disabled = selectedTokenBalance <= 0;
+                return (
                   <button
                     key={pct}
                     type="button"
-                    onClick={() =>
-                      setAmount(
-                        String(
-                          Number((selectedTokenBalance * pct).toFixed(6))
-                        )
-                      )
-                    }
-                    className="flex-1 py-2 rounded-pill text-[11px] font-bold bg-sprout-green-light text-sprout-green-dark cursor-pointer active:scale-[0.97] transition-transform"
+                    disabled={disabled}
+                    onClick={() => {
+                      if (selectedTokenBalance <= 0) return;
+                      // MAX uses the exact balance; lower percents
+                      // floor-round so they can never exceed it.
+                      const raw =
+                        pct === 1
+                          ? selectedTokenBalance
+                          : Math.floor(selectedTokenBalance * pct * 1_000_000) /
+                            1_000_000;
+                      setAmount(String(raw));
+                    }}
+                    className="flex-1 py-2.5 rounded-pill text-xs font-bold bg-sprout-green-primary text-white shadow-subtle cursor-pointer active:scale-[0.97] transition-transform disabled:opacity-40 disabled:cursor-not-allowed"
                   >
                     {pct === 1 ? "MAX" : `${pct * 100}%`}
                   </button>
-                ))}
-              </div>
-            )}
+                );
+              })}
+            </div>
 
             {insufficientBalance && (
               <p className="text-center text-xs text-sprout-red-stop font-semibold">
