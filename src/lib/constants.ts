@@ -1,11 +1,17 @@
 export const SUPPORTED_CHAIN_IDS = [1, 8453, 42161, 10, 137] as const;
 
 export const TOKEN_ADDRESSES: Record<string, Record<number, string>> = {
+  // ETH only covers chains whose NATIVE token is actually ether.
+  // Polygon's native is POL (formerly MATIC) — listing it under ETH
+  // caused us to read the POL balance and then price it at ETH's
+  // ~$3000, inflating the total by hundreds of dollars.
   ETH: {
     1: "0x0000000000000000000000000000000000000000",
     8453: "0x0000000000000000000000000000000000000000",
     42161: "0x0000000000000000000000000000000000000000",
     10: "0x0000000000000000000000000000000000000000",
+  },
+  POL: {
     137: "0x0000000000000000000000000000000000000000",
   },
   USDC: {
@@ -41,6 +47,7 @@ export const TOKEN_DECIMALS: Record<string, number> = {
   USDC: 6,
   USDT: 6,
   ETH: 18,
+  POL: 18,
   WBTC: 8,
   DAI: 18,
 };

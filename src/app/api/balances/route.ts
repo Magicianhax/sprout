@@ -8,10 +8,9 @@ import {
 
 const ALCHEMY_API_KEY = process.env.ALCHEMY_API_KEY;
 
-// Build Alchemy RPC URLs from the chain-to-network map. We swapped off
-// llamarpc because the public domains were DNS-flaky / rate-limited,
-// which was silently dropping balances on OP, Arbitrum, Polygon. We
-// already use Alchemy for activity so the key is in env.
+// Alchemy's alchemy_getTokenBalances lets us fetch every ERC20 balance
+// for a wallet on a chain in one request instead of looping per-token
+// eth_calls. Native balance still needs a separate eth_getBalance.
 function alchemyRpcFor(chainId: number): string | null {
   if (!ALCHEMY_API_KEY) return null;
   const network = ALCHEMY_NETWORK_BY_CHAIN[chainId];
@@ -28,93 +27,135 @@ const NO_STORE_HEADERS = {
   "Cache-Control": "no-store, must-revalidate",
 };
 
-function hexToNumber(hex: string, decimals: number): number {
-  if (!hex || hex === "0x" || hex === "0x0") return 0;
+interface BalanceResult {
+  symbol: string;
+  chainId: number;
+  balanceFormatted: number;
+}
+
+function hexToDecimal(hex: string | null | undefined, decimals: number): number {
+  if (!hex) return 0;
   const clean = hex.replace(/^0x/, "");
   if (!clean) return 0;
   try {
-    const raw = parseInt(clean, 16);
-    if (!isFinite(raw) || raw === 0) return 0;
-    return raw / Math.pow(10, decimals);
+    const raw = BigInt("0x" + clean);
+    if (raw === BigInt(0)) return 0;
+    // Keep this simple: divide via Number for display-grade precision.
+    // Wallets shouldn't need 18-decimal precision on the UI anyway.
+    return Number(raw) / Math.pow(10, decimals);
   } catch {
     return 0;
   }
 }
 
-async function rpcCall(
+async function alchemyRpc<T>(
   rpcUrl: string,
-  body: object,
-  retries = 2,
-): Promise<string | null> {
-  let lastError: unknown = null;
-  for (let attempt = 0; attempt <= retries; attempt++) {
-    try {
-      const res = await fetch(rpcUrl, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(body),
-        signal: AbortSignal.timeout(RPC_FETCH_TIMEOUT_MS),
-      });
-      if (!res.ok) {
-        lastError = new Error(`HTTP ${res.status}`);
-        if (attempt < retries) {
-          await new Promise((r) => setTimeout(r, 200 * (attempt + 1)));
-          continue;
+  method: string,
+  params: unknown[]
+): Promise<T | null> {
+  try {
+    const res = await fetch(rpcUrl, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ jsonrpc: "2.0", method, params, id: 1 }),
+      cache: "no-store",
+      signal: AbortSignal.timeout(RPC_FETCH_TIMEOUT_MS),
+    });
+    if (!res.ok) {
+      console.warn(`[balances] ${method} http ${res.status}`);
+      return null;
+    }
+    const json = (await res.json()) as { result?: T; error?: unknown };
+    if (json.error) {
+      console.warn(`[balances] ${method} rpc error`, json.error);
+      return null;
+    }
+    return (json.result ?? null) as T | null;
+  } catch (err) {
+    console.warn(`[balances] ${method} failed`, err);
+    return null;
+  }
+}
+
+interface AlchemyTokenBalance {
+  contractAddress: string;
+  tokenBalance: string | null;
+  error?: string | null;
+}
+interface AlchemyGetTokenBalancesResult {
+  address: string;
+  tokenBalances: AlchemyTokenBalance[];
+}
+
+/**
+ * Fetch every tracked balance for one chain in at most two RPC calls.
+ * Returns BalanceResult[] with only non-zero entries — the merger at
+ * the top level sorts everything by value afterwards.
+ */
+async function fetchChainBalances(
+  chainId: number,
+  address: string
+): Promise<BalanceResult[]> {
+  const rpcUrl = alchemyRpcFor(chainId);
+  if (!rpcUrl) return [];
+
+  // Split the tokens this chain cares about into native + erc20.
+  const erc20s: Array<{ symbol: string; address: string; decimals: number }> = [];
+  const natives: Array<{ symbol: string; decimals: number }> = [];
+
+  for (const [symbol, chainMap] of Object.entries(TOKEN_ADDRESSES)) {
+    const tokenAddress = chainMap[chainId];
+    if (!tokenAddress) continue;
+    const decimals = TOKEN_DECIMALS[symbol] ?? 18;
+    if (tokenAddress === ZERO_ADDRESS) {
+      natives.push({ symbol, decimals });
+    } else {
+      erc20s.push({ symbol, address: tokenAddress, decimals });
+    }
+  }
+
+  const out: BalanceResult[] = [];
+
+  // ERC20s — one batched request for the whole chain.
+  if (erc20s.length > 0) {
+    const result = await alchemyRpc<AlchemyGetTokenBalancesResult>(
+      rpcUrl,
+      "alchemy_getTokenBalances",
+      [address, erc20s.map((t) => t.address)]
+    );
+    if (result?.tokenBalances) {
+      for (const entry of result.tokenBalances) {
+        if (entry.error) continue;
+        const match = erc20s.find(
+          (t) => t.address.toLowerCase() === entry.contractAddress.toLowerCase()
+        );
+        if (!match) continue;
+        const value = hexToDecimal(entry.tokenBalance, match.decimals);
+        if (value > 0) {
+          out.push({ symbol: match.symbol, chainId, balanceFormatted: value });
         }
-        break;
-      }
-      const json = (await res.json()) as { result?: string; error?: unknown };
-      if (json.error) {
-        lastError = json.error;
-        if (attempt < retries) {
-          await new Promise((r) => setTimeout(r, 200 * (attempt + 1)));
-          continue;
-        }
-        break;
-      }
-      return json.result ?? null;
-    } catch (err) {
-      lastError = err;
-      if (attempt < retries) {
-        await new Promise((r) => setTimeout(r, 200 * (attempt + 1)));
-        continue;
       }
     }
   }
-  console.warn(`[balances] rpc ${rpcUrl} failed after ${retries + 1} attempts`, lastError);
-  return null;
-}
 
-async function fetchErc20Balance(
-  rpcUrl: string,
-  tokenAddress: string,
-  walletAddress: string,
-  decimals: number,
-): Promise<number> {
-  const data = "0x70a08231" + walletAddress.slice(2).padStart(64, "0");
-  const result = await rpcCall(rpcUrl, {
-    jsonrpc: "2.0",
-    method: "eth_call",
-    params: [{ to: tokenAddress, data }, "latest"],
-    id: 1,
-  });
-  return hexToNumber(result ?? "0x", decimals);
-}
+  // Native — one eth_getBalance per chain. Use the symbol listed in
+  // TOKEN_ADDRESSES (ETH for 1/8453/42161/10, POL for 137).
+  for (const native of natives) {
+    const hex = await alchemyRpc<string>(rpcUrl, "eth_getBalance", [
+      address,
+      "latest",
+    ]);
+    const value = hexToDecimal(hex, native.decimals);
+    if (value > 0) {
+      out.push({
+        symbol: native.symbol,
+        chainId,
+        balanceFormatted: value,
+      });
+    }
+  }
 
-async function fetchNativeBalance(rpcUrl: string, walletAddress: string): Promise<number> {
-  const result = await rpcCall(rpcUrl, {
-    jsonrpc: "2.0",
-    method: "eth_getBalance",
-    params: [walletAddress, "latest"],
-    id: 1,
-  });
-  return hexToNumber(result ?? "0x", 18);
-}
-
-interface BalanceResult {
-  symbol: string;
-  chainId: number;
-  balanceFormatted: number;
+  return out;
 }
 
 export async function GET(request: NextRequest): Promise<NextResponse> {
@@ -134,41 +175,20 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
     );
   }
 
-  const tasks: Promise<BalanceResult | { error: string; symbol: string; chainId: number }>[] = [];
-
-  for (const [symbol, chainMap] of Object.entries(TOKEN_ADDRESSES)) {
-    for (const [chainIdStr, tokenAddress] of Object.entries(chainMap)) {
-      const chainId = Number(chainIdStr);
-      const rpcUrl = alchemyRpcFor(chainId);
-      if (!rpcUrl) continue;
-      const decimals = TOKEN_DECIMALS[symbol] ?? 18;
-
-      tasks.push(
-        (async () => {
-          try {
-            const isNative = tokenAddress === ZERO_ADDRESS;
-            const balanceFormatted = isNative
-              ? await fetchNativeBalance(rpcUrl, address)
-              : await fetchErc20Balance(rpcUrl, tokenAddress, address, decimals);
-            return { symbol, chainId, balanceFormatted };
-          } catch (err) {
-            const message = err instanceof Error ? err.message : String(err);
-            console.warn(`[balances] ${symbol}@${chainId} failed: ${message}`);
-            return { error: "rpc_failed", symbol, chainId };
-          }
-        })(),
-      );
+  // Fan out per chain in parallel.
+  const chainIds = new Set<number>();
+  for (const chainMap of Object.values(TOKEN_ADDRESSES)) {
+    for (const chainIdStr of Object.keys(chainMap)) {
+      chainIds.add(Number(chainIdStr));
     }
   }
 
-  const results = await Promise.all(tasks);
-
-  const successes = results.filter(
-    (r): r is BalanceResult => "balanceFormatted" in r && r.balanceFormatted > 0,
+  const perChain = await Promise.all(
+    Array.from(chainIds).map((chainId) => fetchChainBalances(chainId, address))
   );
-  const failureCount = results.filter((r) => "error" in r).length;
 
-  const balances = successes
+  const balances = perChain
+    .flat()
     .map(({ symbol, chainId, balanceFormatted }) => ({
       symbol,
       chainId,
@@ -178,13 +198,7 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
     .sort((a, b) => b.balanceFormatted - a.balanceFormatted);
 
   return NextResponse.json(
-    {
-      balances,
-      // Surface partial-failure info so the client can show a stale-data
-      // warning instead of pretending the balance list is authoritative.
-      partial: failureCount > 0,
-      failedCount: failureCount,
-    },
+    { balances },
     { headers: NO_STORE_HEADERS }
   );
 }
