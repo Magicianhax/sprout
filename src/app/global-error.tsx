@@ -29,14 +29,18 @@ export default function GlobalError({ error, reset }: GlobalErrorProps) {
         }}
       >
         <div style={{ textAlign: "center", maxWidth: 360 }}>
-          <div
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img
+            src="/icon-192.png"
+            alt=""
+            width={72}
+            height={72}
             style={{
-              fontSize: "2.5rem",
               marginBottom: "0.75rem",
+              borderRadius: 16,
+              boxShadow: "0 4px 24px rgba(76,175,80,0.2)",
             }}
-          >
-            🌱
-          </div>
+          />
           <h1 style={{ fontSize: "1.5rem", fontWeight: 800, color: "#1a1a2e", margin: 0 }}>
             Sprout hit a snag
           </h1>

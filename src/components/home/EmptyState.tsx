@@ -1,4 +1,5 @@
 import { Button } from "@/components/ui/Button";
+import { SproutLogo } from "@/components/ui/SproutLogo";
 import { formatCurrency } from "@/lib/format";
 
 interface EmptyStateProps {
@@ -20,9 +21,10 @@ export function EmptyState({ onStartEarning }: EmptyStateProps) {
       </div>
 
       {/* Sprout illustration */}
-      <div className="w-24 h-24 rounded-full bg-gradient-to-br from-sprout-green-light to-[#C8E6C9] flex items-center justify-center mb-5 shadow-subtle">
-        <span className="text-4xl">🌱</span>
-      </div>
+      <SproutLogo
+        size={96}
+        className="mb-5 shadow-subtle rounded-[22px]"
+      />
 
       {/* Heading */}
       <h2 className="font-heading text-2xl font-700 text-sprout-text-primary text-center mb-2">

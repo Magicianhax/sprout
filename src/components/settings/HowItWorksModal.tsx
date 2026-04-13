@@ -2,6 +2,7 @@
 
 import { useEffect } from "react";
 import { X } from "lucide-react";
+import { SproutLogo } from "@/components/ui/SproutLogo";
 
 interface HowItWorksModalProps {
   open: boolean;
@@ -87,9 +88,11 @@ export function HowItWorksModal({ open, onClose }: HowItWorksModalProps) {
           </button>
 
           <div className="text-center pt-1 mb-5">
-            <div className="w-14 h-14 rounded-full bg-gradient-to-br from-sprout-green-light to-sprout-green-primary/40 flex items-center justify-center mx-auto mb-3">
-              <span className="text-2xl" aria-hidden="true">🌱</span>
-            </div>
+            <SproutLogo
+              size={56}
+              decorative
+              className="mx-auto mb-3 shadow-subtle rounded-xl"
+            />
             <h2 className="font-heading text-xl font-800 text-sprout-text-primary">
               How Sprout works
             </h2>

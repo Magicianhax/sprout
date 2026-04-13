@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { ArrowRight, Coins, Rocket, ShieldCheck } from "lucide-react";
 import { QuestionCard } from "@/components/onboarding/QuestionCard";
 import { Button } from "@/components/ui/Button";
+import { SproutLogo } from "@/components/ui/SproutLogo";
 import { AuthGuard } from "@/components/layout/AuthGuard";
 import { usePreferences } from "@/lib/hooks/usePreferences";
 import { TokenIcon } from "@/components/ui/TokenIcon";
@@ -92,9 +93,11 @@ export default function OnboardingPage() {
         {isWelcome ? (
           <div className="flex flex-col flex-1">
             <div className="flex flex-col items-center text-center">
-              <div className="w-24 h-24 rounded-full bg-gradient-to-br from-sprout-green-light to-sprout-green-primary/40 flex items-center justify-center mb-6">
-                <span className="text-5xl" aria-hidden="true">🌱</span>
-              </div>
+              <SproutLogo
+                size={96}
+                decorative
+                className="mb-6 shadow-subtle rounded-[22px]"
+              />
               <h1 className="font-heading text-3xl font-800 text-sprout-green-dark">
                 Welcome to Sprout
               </h1>

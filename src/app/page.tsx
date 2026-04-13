@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { useEffect } from "react";
 import { Sparkles, ShieldCheck, Zap } from "lucide-react";
 import { Button } from "@/components/ui/Button";
+import { SproutLogo } from "@/components/ui/SproutLogo";
 import { loadPreferences } from "@/stores/preferences";
 
 export default function LandingPage() {
@@ -24,10 +25,11 @@ export default function LandingPage() {
     return (
       <main className="flex flex-col items-center justify-center min-h-dvh px-5 bg-sprout-gradient">
         <div className="relative">
-          <div className="absolute inset-0 rounded-full bg-sprout-green-primary/20 blur-2xl sprout-glow" />
-          <div className="relative w-28 h-28 rounded-full bg-gradient-to-br from-sprout-green-light to-[#C8E6C9] flex items-center justify-center shadow-glow sprout-pulse">
-            <span className="text-5xl">🌱</span>
-          </div>
+          <div className="absolute inset-0 rounded-[32px] bg-sprout-green-primary/25 blur-2xl sprout-glow" />
+          <SproutLogo
+            size={112}
+            className="relative shadow-glow sprout-pulse rounded-[28px]"
+          />
         </div>
         <h1 className="font-heading text-4xl font-800 text-sprout-green-dark text-center mt-8">
           sprout
@@ -61,12 +63,15 @@ export default function LandingPage() {
         className="pointer-events-none absolute -bottom-24 -right-24 w-[28rem] h-[28rem] rounded-full bg-sprout-green-light/40 blur-[112px]"
       />
 
-      {/* Top wordmark — no dead "sprout out of position" look like the
-          old layout where the heading floated mid-screen. */}
+      {/* Top wordmark — anchors the brand in the top-left so the
+          hero section has a reference point instead of floating
+          mid-screen. */}
       <div className="relative flex items-center gap-2 px-5 pt-6">
-        <div className="w-8 h-8 rounded-full bg-gradient-to-br from-sprout-green-light to-sprout-green-primary flex items-center justify-center shadow-subtle">
-          <span className="text-lg leading-none">🌱</span>
-        </div>
+        <SproutLogo
+          size={32}
+          decorative
+          className="shadow-subtle rounded-lg"
+        />
         <span className="font-heading text-lg font-800 text-sprout-green-dark">
           sprout
         </span>
@@ -75,10 +80,11 @@ export default function LandingPage() {
       {/* Hero — centered vertically in the remaining space. */}
       <section className="relative flex-1 flex flex-col items-center justify-center px-5 text-center">
         <div className="relative mb-8 landing-rise">
-          <div className="absolute inset-0 rounded-full bg-sprout-green-primary/25 blur-3xl" />
-          <div className="relative w-32 h-32 rounded-full bg-gradient-to-br from-sprout-green-light to-[#C8E6C9] flex items-center justify-center shadow-glow">
-            <span className="text-6xl leading-none">🌱</span>
-          </div>
+          <div className="absolute inset-0 rounded-[36px] bg-sprout-green-primary/30 blur-3xl" />
+          <SproutLogo
+            size={128}
+            className="relative shadow-glow rounded-[32px]"
+          />
         </div>
 
         <h1 className="font-heading text-[44px] leading-[1.05] font-900 text-sprout-text-primary landing-rise-delay-1">

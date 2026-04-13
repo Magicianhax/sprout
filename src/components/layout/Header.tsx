@@ -7,7 +7,7 @@ import { usePreferences } from "@/lib/hooks/usePreferences";
 function initialFor(email?: string, address?: string): string {
   if (email) return email.charAt(0).toUpperCase();
   if (address) return address.charAt(2).toUpperCase();
-  return "🌱";
+  return "S";
 }
 
 // Deterministic gradient seeded by the wallet address so every user

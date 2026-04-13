@@ -1,5 +1,7 @@
 "use client";
 
+import { SproutLogo } from "@/components/ui/SproutLogo";
+
 const EXPLORER_TX_URLS: Record<number, string> = {
   1: "https://etherscan.io/tx/",
   8453: "https://basescan.org/tx/",
@@ -33,7 +35,7 @@ const COPY = {
   deposit: {
     confirmingTitle: "Confirming your deposit…",
     confirmingBody: "Please approve in your wallet",
-    successTitle: "Your money is growing! 🌱",
+    successTitle: "Your money is growing!",
     closeLabel: "Back to Home",
   },
   withdraw: {
@@ -123,9 +125,11 @@ export function TransactionModal({
           {status === "confirming" && (
             <>
               {/* Sprout icon — breathing animation */}
-              <div className="w-20 h-20 rounded-full bg-green-50 flex items-center justify-center mb-6">
-                <span className="text-4xl sprout-breathe" aria-hidden="true">🌱</span>
-              </div>
+              <SproutLogo
+                size={80}
+                decorative
+                className="mb-6 sprout-breathe rounded-[20px]"
+              />
 
               <h2 className="font-heading text-xl font-bold text-sprout-text-primary mb-2">
                 {copy.confirmingTitle}

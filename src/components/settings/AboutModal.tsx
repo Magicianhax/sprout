@@ -1,6 +1,7 @@
 "use client";
 
 import { X } from "lucide-react";
+import { SproutLogo } from "@/components/ui/SproutLogo";
 
 interface AboutModalProps {
   open: boolean;
@@ -42,9 +43,11 @@ export function AboutModal({ open, onClose }: AboutModalProps) {
 
           {/* Logo */}
           <div className="flex flex-col items-center text-center">
-            <div className="w-16 h-16 rounded-full bg-gradient-to-br from-sprout-green-light to-sprout-green-primary/40 flex items-center justify-center mb-3">
-              <span className="text-3xl" aria-hidden="true">🌱</span>
-            </div>
+            <SproutLogo
+              size={64}
+              decorative
+              className="mb-3 shadow-subtle rounded-[14px]"
+            />
             <h2 className="font-heading text-2xl font-800 text-sprout-green-dark">
               sprout
             </h2>
