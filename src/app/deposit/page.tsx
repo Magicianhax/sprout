@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { usePrivy, useWallets } from "@privy-io/react-auth";
 import { ArrowLeft } from "lucide-react";
@@ -137,14 +137,56 @@ function DepositPageContent() {
     }
   }, [tokenSelection.symbol, tokenSelection.chainId, urlVault, urlChainId]);
 
-  // When vault resolves, default fromChain to vault's chain if token is available there
+  // When a new vault resolves, pick the best source chain based on
+  // where the user actually holds the selected token. LI.FI Composer
+  // handles the cross-chain bridging, so we'd rather pull from the
+  // chain that has the funds than dump the user on the vault's chain
+  // with an empty balance. Only runs once per (vault, token) pair —
+  // tracked via a ref so user manual chain changes from TokenSelector
+  // stick without being overwritten when balances refetch.
+  const autoSelectedKey = useRef<string | null>(null);
   useEffect(() => {
     if (!vault) return;
-    setTokenSelection((prev) => ({
-      ...prev,
-      chainId: getDefaultChainForToken(prev.symbol, vault.chainId),
-    }));
-  }, [vault]);
+    if (balancesLoading) return;
+
+    const key = `${vault.chainId}-${vault.address}-${tokenSelection.symbol}`;
+    if (autoSelectedKey.current === key) return;
+    autoSelectedKey.current = key;
+
+    const symbol = tokenSelection.symbol;
+    const candidates = walletBalances.filter(
+      (b) => b.symbol === symbol && b.balanceFormatted > 0
+    );
+
+    let bestChainId: number;
+    if (candidates.length === 0) {
+      // No balance anywhere — fall back to the vault's own chain so
+      // the token selector at least points at something sensible.
+      bestChainId = getDefaultChainForToken(symbol, vault.chainId);
+    } else {
+      // Prefer the vault's own chain when there's any balance there
+      // (saves the user a bridge). Otherwise pick the chain with the
+      // largest balance.
+      const onVaultChain = candidates.find((b) => b.chainId === vault.chainId);
+      if (onVaultChain) {
+        bestChainId = vault.chainId;
+      } else {
+        const sorted = [...candidates].sort(
+          (a, b) => b.balanceFormatted - a.balanceFormatted
+        );
+        bestChainId = sorted[0].chainId;
+      }
+    }
+
+    // Safety: ensure the token is actually configured on this chain.
+    if (!TOKEN_ADDRESSES[symbol]?.[bestChainId]) {
+      bestChainId = getDefaultChainForToken(symbol, vault.chainId);
+    }
+
+    setTokenSelection((prev) =>
+      prev.chainId === bestChainId ? prev : { ...prev, chainId: bestChainId }
+    );
+  }, [vault, walletBalances, balancesLoading, tokenSelection.symbol]);
 
   // Fetch quote whenever amount, vault, or token selection changes
   const fetchQuote = useCallback(async () => {
