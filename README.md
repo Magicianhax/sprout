@@ -54,7 +54,6 @@ Users sign in with email / Google / X, answer 2–3 onboarding questions, and st
 - [Security model](#security-model)
 - [Running locally](#running-locally)
 - [Project conventions](#project-conventions)
-- [Why the stack is boring](#why-the-stack-is-boring)
 
 ---
 
@@ -483,26 +482,7 @@ Requirements:
 - **Minimal comments, load-bearing only.** Comments explain *why*, never *what*. "This fires before switchChain resolves under Privy" is useful; "// fetch positions" isn't.
 - **Typed API boundaries with loose runtime guards.** `schemas.ts` validates the minimum fields we actually consume from upstream responses. Everything else passes through untyped.
 - **Handle rejects, surface errors.** Every flow has a catch that translates provider errors into user-readable messages. `isUserRejection()` is applied everywhere a wallet prompt happens.
-- **No mocks, no fakes.** The dev build hits real LI.FI + real Alchemy. There's no local-dev mock mode.
 
 ---
-
-## Why the stack is boring
-
-Hackathons reward a working demo over architectural novelty. Sprout deliberately picks the plainest tool at every layer:
-
-- **React + Next.js** instead of SSG / SPA / some new meta-framework → fast cold path, API routes double as the proxy layer, Turbopack HMR is instant.
-- **Tailwind without a component kit** → designs match the Figma spec exactly, no fighting shadcn overrides or Radix portal weirdness.
-- **Module-level state** instead of a state library → zero bundle cost, zero provider hell, no redux-toolkit boilerplate. Every hook is ~100 lines and you can read the whole thing in one sitting.
-- **Privy** for the entire auth + wallet story → social login + embedded wallets + EOA support in one SDK. No walletconnect + metamask adapter + siwe soup.
-- **LI.FI direct HTTP** instead of `@lifi/sdk` → we tried the SDK, ran into Privy-wallet-client integration bugs, ripped it out. Direct POSTs to `/v1/advanced/routes` + iterating `routes[0].steps[]` manually is ~150 lines of honest code that never surprises us.
-- **Hand-rolled ABI encoding** (`hex32 + selector` padding) for the ~5 functions we need (`balanceOf`, `approve`, `allowance`, `redeem`, `withdraw`, `deposit`). Faster than pulling in an ABI coder at import time.
-
-The "amazing UX" people point at isn't coming from fancy dependencies — it's:
-
-1. Short-path flows (Lite mode has 2 taps total).
-2. Shared caches + optimistic updates so the UI never blocks on a network round-trip it already has data for.
-3. Multi-step transaction modal that shows the truth about what's happening on-chain instead of a single spinner.
-4. Sane defaults (auto-picked vaults, chain-aware withdraw planner) that make the zero-config path actually work.
 
 — `sprout@0.1.0` · built for the LI.FI DeFi Mullet Hackathon · 2026
