@@ -1,17 +1,23 @@
 import { NextRequest, NextResponse } from "next/server";
 import {
+  ALCHEMY_NETWORK_BY_CHAIN,
   RPC_FETCH_TIMEOUT_MS,
   TOKEN_ADDRESSES,
   TOKEN_DECIMALS,
 } from "@/lib/constants";
 
-const RPC_URLS: Record<number, string> = {
-  1: "https://eth.llamarpc.com",
-  8453: "https://base.llamarpc.com",
-  42161: "https://arbitrum.llamarpc.com",
-  10: "https://optimism.llamarpc.com",
-  137: "https://polygon.llamarpc.com",
-};
+const ALCHEMY_API_KEY = process.env.ALCHEMY_API_KEY;
+
+// Build Alchemy RPC URLs from the chain-to-network map. We swapped off
+// llamarpc because the public domains were DNS-flaky / rate-limited,
+// which was silently dropping balances on OP, Arbitrum, Polygon. We
+// already use Alchemy for activity so the key is in env.
+function alchemyRpcFor(chainId: number): string | null {
+  if (!ALCHEMY_API_KEY) return null;
+  const network = ALCHEMY_NETWORK_BY_CHAIN[chainId];
+  if (!network) return null;
+  return `https://${network}.g.alchemy.com/v2/${ALCHEMY_API_KEY}`;
+}
 
 const ZERO_ADDRESS = "0x0000000000000000000000000000000000000000";
 
@@ -112,9 +118,20 @@ interface BalanceResult {
 }
 
 export async function GET(request: NextRequest): Promise<NextResponse> {
+  if (!ALCHEMY_API_KEY) {
+    console.error("[balances] ALCHEMY_API_KEY not configured");
+    return NextResponse.json(
+      { error: "Server configuration error" },
+      { status: 500, headers: NO_STORE_HEADERS }
+    );
+  }
+
   const address = request.nextUrl.searchParams.get("address");
   if (!address || !/^0x[0-9a-fA-F]{40}$/.test(address)) {
-    return NextResponse.json({ error: "Invalid address" }, { status: 400 });
+    return NextResponse.json(
+      { error: "Invalid address" },
+      { status: 400, headers: NO_STORE_HEADERS }
+    );
   }
 
   const tasks: Promise<BalanceResult | { error: string; symbol: string; chainId: number }>[] = [];
@@ -122,7 +139,7 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
   for (const [symbol, chainMap] of Object.entries(TOKEN_ADDRESSES)) {
     for (const [chainIdStr, tokenAddress] of Object.entries(chainMap)) {
       const chainId = Number(chainIdStr);
-      const rpcUrl = RPC_URLS[chainId];
+      const rpcUrl = alchemyRpcFor(chainId);
       if (!rpcUrl) continue;
       const decimals = TOKEN_DECIMALS[symbol] ?? 18;
 
