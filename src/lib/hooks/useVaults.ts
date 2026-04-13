@@ -33,11 +33,77 @@ function keyOf(token?: string): string {
   return token ?? "__all__";
 }
 
+/**
+ * Kick the full (unfiltered) vault stream without needing to
+ * subscribe as a component. Used by usePositions so it can build
+ * positions from on-chain share balances even on pages that never
+ * mount useVaults directly (e.g. /portfolio).
+ */
+export function ensureVaultsLoaded(): void {
+  startStream(undefined);
+}
+
+/**
+ * Read-only accessor for the shared vault cache used by other
+ * hooks that need to cross-reference vault metadata (e.g.
+ * usePositions remapping LI.FI's mis-labelled protocolName).
+ * Returns a merged, de-duped list across all stream keys.
+ */
+export function getCachedVaults(): Vault[] {
+  const seen = new Set<string>();
+  const out: Vault[] = [];
+  for (const state of streams.values()) {
+    for (const v of state.vaults) {
+      const key = `${v.chainId}-${v.address.toLowerCase()}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      out.push(v);
+    }
+  }
+  return out;
+}
+
+/**
+ * Clear every vault stream and any inflight fetch, then re-kick a
+ * fresh stream for every key that had active subscribers. Used by
+ * the app-wide refresh flow so the vault grid immediately reloads
+ * from the API instead of waiting for a remount.
+ */
+export function invalidateAllVaults(): void {
+  const activeKeys = Array.from(subscribers.keys()).filter(
+    (k) => (subscribers.get(k)?.size ?? 0) > 0
+  );
+  streams.clear();
+  inflight.clear();
+  for (const subs of subscribers.values()) {
+    for (const cb of subs) cb(EMPTY_STATE);
+  }
+  for (const key of activeKeys) {
+    // "__all__" was stored as undefined token; restore it.
+    const token = key === "__all__" ? undefined : key;
+    startStream(token);
+  }
+}
+
+// Cross-module listeners that get called on every vault stream
+// update. Used by usePositions to re-run protocol-name remapping
+// as pages of vaults stream in.
+const globalListeners = new Set<() => void>();
+
+export function onCachedVaultsChanged(cb: () => void): () => void {
+  globalListeners.add(cb);
+  return () => {
+    globalListeners.delete(cb);
+  };
+}
+
 function setState(key: string, state: StreamState) {
   streams.set(key, state);
   const subs = subscribers.get(key);
-  if (!subs) return;
-  for (const cb of subs) cb(state);
+  if (subs) {
+    for (const cb of subs) cb(state);
+  }
+  for (const cb of globalListeners) cb();
 }
 
 function startStream(token: string | undefined) {

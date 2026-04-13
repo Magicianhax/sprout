@@ -19,6 +19,7 @@ import {
   cleanGroup,
   type Classification,
 } from "@/lib/activity";
+import { refreshEverything } from "@/lib/refresh";
 import type { ActivityGroup } from "@/lib/types";
 
 const PAGE_SIZE = 10;
@@ -31,8 +32,12 @@ interface ClassifiedGroup {
 function ActivityContent() {
   const { user } = usePrivy();
   const address = user?.wallet?.address;
-  const { records, loading, error, reload } = useActivity(address);
+  const { records, loading, error } = useActivity(address);
   const { vaults } = useVaults();
+
+  const handleRefresh = () => {
+    void refreshEverything(address);
+  };
 
   const [selectedChains, setSelectedChains] = useState<number[]>([]);
   const [selectedTokens, setSelectedTokens] = useState<string[]>([]);
@@ -160,7 +165,7 @@ function ActivityContent() {
         <Button
           variant="secondary"
           className="!px-4 !py-2 !text-xs shrink-0"
-          onClick={reload}
+          onClick={handleRefresh}
         >
           Refresh
         </Button>

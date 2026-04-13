@@ -1,7 +1,5 @@
 "use client";
 
-import { useRouter } from "next/navigation";
-
 const EXPLORER_TX_URLS: Record<number, string> = {
   1: "https://etherscan.io/tx/",
   8453: "https://basescan.org/tx/",
@@ -10,9 +8,13 @@ const EXPLORER_TX_URLS: Record<number, string> = {
   137: "https://polygonscan.com/tx/",
 };
 
-function truncateTxHash(hash: string): string {
-  if (hash.length <= 14) return hash;
-  return `${hash.slice(0, 8)}…${hash.slice(-6)}`;
+export interface TransactionStepView {
+  id: string;
+  label: string;
+  chainId?: number;
+  status: "pending" | "active" | "done" | "failed";
+  txHash?: string;
+  txLink?: string;
 }
 
 export interface TransactionModalProps {
@@ -21,6 +23,8 @@ export interface TransactionModalProps {
   txHash?: string;
   chainId?: number;
   errorMessage?: string;
+  /** Multi-step progress list (LI.FI route execution). */
+  steps?: TransactionStepView[];
   onClose: () => void;
   onRetry: () => void;
 }
@@ -46,6 +50,7 @@ export function TransactionModal({
   txHash,
   chainId,
   errorMessage,
+  steps,
   onClose,
   onRetry,
 }: TransactionModalProps) {
@@ -54,6 +59,11 @@ export function TransactionModal({
 
   const explorerBase = chainId ? (EXPLORER_TX_URLS[chainId] ?? null) : null;
   const explorerUrl = explorerBase && txHash ? `${explorerBase}${txHash}` : null;
+
+  // Render the step list whenever a caller provides one — the
+  // deposit flow always has 2–3 steps (approve + deposit, plus an
+  // optional bridge).
+  const showSteps = Array.isArray(steps) && steps.length >= 1;
 
   return (
     <>
@@ -120,16 +130,21 @@ export function TransactionModal({
               <h2 className="font-heading text-xl font-bold text-sprout-text-primary mb-2">
                 {copy.confirmingTitle}
               </h2>
-              <p className="text-sm text-sprout-text-muted mb-6">
-                {copy.confirmingBody}
-              </p>
 
-              {/* Animated dots */}
-              <div className="flex items-center gap-2 mb-6" aria-label="Loading">
-                <span className="w-2.5 h-2.5 rounded-full bg-green-500 dot-1" />
-                <span className="w-2.5 h-2.5 rounded-full bg-green-500 dot-2" />
-                <span className="w-2.5 h-2.5 rounded-full bg-green-500 dot-3" />
-              </div>
+              {showSteps ? (
+                <StepList steps={steps!} />
+              ) : (
+                <>
+                  <p className="text-sm text-sprout-text-muted mb-6">
+                    {copy.confirmingBody}
+                  </p>
+                  <div className="flex items-center gap-2 mb-6" aria-label="Loading">
+                    <span className="w-2.5 h-2.5 rounded-full bg-green-500 dot-1" />
+                    <span className="w-2.5 h-2.5 rounded-full bg-green-500 dot-2" />
+                    <span className="w-2.5 h-2.5 rounded-full bg-green-500 dot-3" />
+                  </div>
+                </>
+              )}
 
               <button
                 onClick={onClose}
@@ -235,5 +250,100 @@ export function TransactionModal({
         </div>
       </div>
     </>
+  );
+}
+
+function StepList({ steps }: { steps: TransactionStepView[] }) {
+  return (
+    <ol className="w-full flex flex-col gap-2 mb-6 text-left">
+      {steps.map((step) => {
+        const explorerBase = step.chainId
+          ? EXPLORER_TX_URLS[step.chainId] ?? null
+          : null;
+        const explorerUrl =
+          step.txLink ??
+          (explorerBase && step.txHash ? `${explorerBase}${step.txHash}` : null);
+
+        return (
+          <li
+            key={step.id}
+            className="flex items-center gap-3 px-3 py-2.5 rounded-xl bg-green-50/60"
+          >
+            <StepStatusIcon status={step.status} />
+            <div className="flex-1 min-w-0">
+              <p
+                className={`text-sm font-semibold truncate ${
+                  step.status === "done"
+                    ? "text-green-800"
+                    : step.status === "failed"
+                    ? "text-red-600"
+                    : "text-sprout-text-primary"
+                }`}
+              >
+                {step.label}
+              </p>
+              {explorerUrl && (
+                <a
+                  href={explorerUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-[11px] text-green-700 underline underline-offset-2 hover:text-green-900"
+                >
+                  View tx ↗
+                </a>
+              )}
+            </div>
+          </li>
+        );
+      })}
+    </ol>
+  );
+}
+
+function StepStatusIcon({ status }: { status: TransactionStepView["status"] }) {
+  if (status === "done") {
+    return (
+      <div className="w-6 h-6 rounded-full bg-green-500 flex items-center justify-center shrink-0">
+        <svg
+          className="w-4 h-4 text-white"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth={3}
+          strokeLinecap="round"
+          strokeLinejoin="round"
+        >
+          <polyline points="20 6 9 17 4 12" />
+        </svg>
+      </div>
+    );
+  }
+  if (status === "failed") {
+    return (
+      <div className="w-6 h-6 rounded-full bg-red-500 flex items-center justify-center shrink-0">
+        <svg
+          className="w-3.5 h-3.5 text-white"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth={3}
+          strokeLinecap="round"
+          strokeLinejoin="round"
+        >
+          <line x1="18" y1="6" x2="6" y2="18" />
+          <line x1="6" y1="6" x2="18" y2="18" />
+        </svg>
+      </div>
+    );
+  }
+  if (status === "active") {
+    return (
+      <div className="w-6 h-6 rounded-full border-2 border-green-500 flex items-center justify-center shrink-0">
+        <span className="w-2 h-2 rounded-full bg-green-500 sprout-breathe" />
+      </div>
+    );
+  }
+  return (
+    <div className="w-6 h-6 rounded-full border-2 border-sprout-border shrink-0" />
   );
 }

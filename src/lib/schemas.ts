@@ -102,6 +102,9 @@ function isPosition(v: unknown): v is Position {
   if (!isNumber(v.asset.decimals)) return false;
   if (!isString(v.balanceUsd)) return false;
   if (!isString(v.balanceNative)) return false;
+  // vaultAddress is optional — LI.FI returns it on most positions,
+  // but we tolerate its absence.
+  if (v.vaultAddress !== undefined && !isAddress(v.vaultAddress)) return false;
   return true;
 }
 

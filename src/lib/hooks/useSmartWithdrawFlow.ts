@@ -10,7 +10,7 @@ import {
 import { invalidateActivity } from "@/lib/hooks/useActivity";
 import { invalidateBalances } from "@/lib/hooks/useBalances";
 import { executeVaultWithdraw } from "@/lib/withdrawExecutor";
-import { POSITION_RESYNC_DELAYS_MS } from "@/lib/constants";
+import { POSITION_RESYNC_DELAYS_MS, TOKEN_ADDRESSES } from "@/lib/constants";
 import {
   buildWithdrawPlan,
   planTotalUsd,
@@ -29,6 +29,14 @@ export interface SmartWithdrawState {
   completed: Array<{ step: WithdrawStep; txHash: string }>;
   errorMessage: string;
   requestedUsd: number;
+  /**
+   * Optional destination chain the user picked in the withdraw
+   * modal. Each step's withdraw is targeted at USDC on this
+   * chain — executeVaultWithdraw routes via LI.FI when it's
+   * different from the vault's chain. Undefined = deliver to
+   * each position's own chain.
+   */
+  destinationChainId?: number;
 }
 
 const INITIAL: SmartWithdrawState = {
@@ -38,6 +46,7 @@ const INITIAL: SmartWithdrawState = {
   completed: [],
   errorMessage: "",
   requestedUsd: 0,
+  destinationChainId: undefined,
 };
 
 function scheduleResync(walletAddress: string) {
@@ -56,6 +65,20 @@ async function resolveVault(
   position: Position,
   cachedVaults: Vault[]
 ): Promise<Vault> {
+  // Prefer the vault the wallet actually holds shares in — stamped
+  // on position.vaultAddress by the remap in usePositions. Falls
+  // back to the looser (chain, protocol, underlying) match only if
+  // vaultAddress is missing (e.g. the vault cache hadn't streamed
+  // far enough at remap time).
+  if (position.vaultAddress) {
+    const target = position.vaultAddress.toLowerCase();
+    const byAddress = cachedVaults.find(
+      (v) =>
+        v.chainId === position.chainId &&
+        v.address.toLowerCase() === target
+    );
+    if (byAddress) return byAddress;
+  }
   const assetAddr = position.asset.address.toLowerCase();
   const hit = cachedVaults.find(
     (v) =>
@@ -108,7 +131,12 @@ export function useSmartWithdrawFlow() {
   // Execute an already-built plan starting at `fromIndex`. Used by both
   // start() and retry() so resume-on-failure shares one code path.
   const executePlan = useCallback(
-    async (plan: WithdrawStep[], fromIndex: number, requestedUsd: number) => {
+    async (
+      plan: WithdrawStep[],
+      fromIndex: number,
+      requestedUsd: number,
+      destinationChainId?: number
+    ) => {
       if (inFlightRef.current) return;
       inFlightRef.current = true;
 
@@ -124,8 +152,18 @@ export function useSmartWithdrawFlow() {
           plan,
           currentStepIndex: fromIndex,
           requestedUsd,
+          destinationChainId,
           errorMessage: "",
         }));
+
+        // Target token on the destination chain, if set. Lite
+        // mode always delivers to USDC — if TOKEN_ADDRESSES doesn't
+        // have USDC on the chosen chain we fall back to per-
+        // position defaults (no cross-chain routing).
+        const destTokenAddress =
+          destinationChainId !== undefined
+            ? TOKEN_ADDRESSES["USDC"]?.[destinationChainId]
+            : undefined;
 
         for (let i = fromIndex; i < plan.length; i++) {
           const step = plan[i];
@@ -138,6 +176,9 @@ export function useSmartWithdrawFlow() {
             position: step.position,
             vault,
             amount: step.amount,
+            toChainId:
+              destinationChainId ?? undefined,
+            toTokenAddress: destTokenAddress,
             // No per-step UI flicker — we're already in "confirming".
           });
 
@@ -177,7 +218,11 @@ export function useSmartWithdrawFlow() {
   );
 
   const start = useCallback(
-    async (requestedUsd: number, positions: Position[]) => {
+    async (
+      requestedUsd: number,
+      positions: Position[],
+      destinationChainId?: number
+    ) => {
       if (inFlightRef.current) return;
 
       const plan = buildWithdrawPlan(positions, cachedVaults, requestedUsd);
@@ -187,6 +232,7 @@ export function useSmartWithdrawFlow() {
           phase: "error",
           errorMessage: "Nothing to withdraw for the requested amount.",
           requestedUsd,
+          destinationChainId,
         }));
         return;
       }
@@ -202,6 +248,7 @@ export function useSmartWithdrawFlow() {
             2
           )} earning — try a smaller amount.`,
           requestedUsd,
+          destinationChainId,
           plan,
         }));
         return;
@@ -214,9 +261,10 @@ export function useSmartWithdrawFlow() {
         completed: [],
         errorMessage: "",
         requestedUsd,
+        destinationChainId,
       });
 
-      await executePlan(plan, 0, requestedUsd);
+      await executePlan(plan, 0, requestedUsd, destinationChainId);
     },
     [cachedVaults, executePlan, safeSetState]
   );
@@ -227,8 +275,20 @@ export function useSmartWithdrawFlow() {
     const fromIndex = state.completed.length;
     if (fromIndex >= state.plan.length) return;
     safeSetState((s) => ({ ...s, phase: "confirming", errorMessage: "" }));
-    void executePlan(state.plan, fromIndex, state.requestedUsd);
-  }, [state.plan, state.completed.length, state.requestedUsd, executePlan, safeSetState]);
+    void executePlan(
+      state.plan,
+      fromIndex,
+      state.requestedUsd,
+      state.destinationChainId
+    );
+  }, [
+    state.plan,
+    state.completed.length,
+    state.requestedUsd,
+    state.destinationChainId,
+    executePlan,
+    safeSetState,
+  ]);
 
   const modalStatus: "confirming" | "success" | "error" | null =
     state.phase === "success"

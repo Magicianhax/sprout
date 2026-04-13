@@ -9,7 +9,6 @@ import { BottomNav } from "@/components/layout/BottomNav";
 import { WalletActionBar } from "@/components/portfolio/WalletActionBar";
 import { BalanceCard } from "@/components/home/BalanceCard";
 import { EmptyState } from "@/components/home/EmptyState";
-import { TrustBadges } from "@/components/home/TrustBadges";
 import { RecentActivity } from "@/components/home/RecentActivity";
 import { VaultCard } from "@/components/vault/VaultCard";
 import { ChainDropdown } from "@/components/vault/ChainDropdown";
@@ -31,6 +30,7 @@ import { TransactionModal } from "@/components/deposit/TransactionModal";
 import { getRiskLevel } from "@/lib/format";
 import { CHAIN_NAMES, HOME_PAGE_SIZE } from "@/lib/constants";
 import { displayProtocol } from "@/lib/protocols";
+import { refreshEverything } from "@/lib/refresh";
 import type { SortBy, Vault } from "@/lib/types";
 
 function getGreeting(): string {
@@ -123,7 +123,7 @@ function LiteHome() {
           <p className="text-sprout-text-secondary mb-3">Couldn&apos;t load your positions</p>
           <Button variant="secondary" onClick={reload}>Try again</Button>
         </Card>
-      ) : hasPositions ? (
+      ) : hasPositions || totalValueUsd > 0 ? (
         <div className="flex flex-col gap-5 pt-2">
           <BalanceCard
             totalBalance={totalValueUsd}
@@ -136,14 +136,16 @@ function LiteHome() {
               className="w-full"
               onClick={() => router.push("/deposit")}
             >
-              Earn More
+              {hasPositions ? "Earn More" : "Start Earning"}
             </Button>
-            <button
-              className="text-center text-sm text-sprout-red-stop font-semibold py-1 cursor-pointer"
-              onClick={() => setWithdrawOpen(true)}
-            >
-              Stop Earning
-            </button>
+            {hasPositions && (
+              <button
+                className="text-center text-sm text-sprout-red-stop font-semibold py-1 cursor-pointer"
+                onClick={() => setWithdrawOpen(true)}
+              >
+                Stop Earning
+              </button>
+            )}
           </div>
 
           <RecentActivity
@@ -154,10 +156,7 @@ function LiteHome() {
           />
         </div>
       ) : (
-        <>
-          <EmptyState onStartEarning={() => router.push("/deposit")} />
-          <TrustBadges />
-        </>
+        <EmptyState onStartEarning={() => router.push("/deposit")} />
       )}
 
       <BottomNav />
@@ -170,6 +169,9 @@ function LiteHome() {
         totalEarningUsd={totalBalance}
         onConfirm={(usd) => {
           setWithdrawOpen(false);
+          // Lite always exits each position to its own chain and
+          // underlying — direct ERC4626 redeem, zero slippage.
+          // Cross-chain / custom-token exits live in Pro only.
           void smartWithdraw.start(usd, positions);
         }}
       />
@@ -233,10 +235,14 @@ function ProHome() {
   const [assetFilter, setAssetFilter] = useState<string>("all");
   const [searchQuery, setSearchQuery] = useState<string>("");
 
-  const { vaults, loading, loadingMore, error, reload } = useVaults({
+  const { vaults, loading, loadingMore, error } = useVaults({
     chainIds: selectedChains.length > 0 ? selectedChains : undefined,
     sortBy,
   });
+
+  const handleRefresh = () => {
+    void refreshEverything(address);
+  };
 
   const assetFilteredVaults = useMemo(
     () => filterVaultsByAsset(vaults, assetFilter),
@@ -361,10 +367,10 @@ function ProHome() {
         <SortToggle value={sortBy} onChange={setSortBy} />
         <button
           type="button"
-          onClick={reload}
+          onClick={handleRefresh}
           disabled={loading}
           className="ml-auto p-2 rounded-full bg-sprout-card border border-sprout-border shadow-subtle text-sprout-text-primary cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
-          aria-label="Refresh vaults"
+          aria-label="Refresh data"
         >
           <RefreshCw
             size={14}
@@ -402,7 +408,7 @@ function ProHome() {
       ) : error ? (
         <Card className="mx-5 text-center py-8">
           <p className="text-sprout-text-secondary mb-3">Couldn&apos;t load opportunities</p>
-          <Button variant="secondary" onClick={reload}>Try again</Button>
+          <Button variant="secondary" onClick={handleRefresh}>Try again</Button>
         </Card>
       ) : visibleVaults.length === 0 ? (
         <div className="mx-5 mt-4 text-center text-sm text-sprout-text-muted py-10">

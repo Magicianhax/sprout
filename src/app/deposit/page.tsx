@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback, useRef } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { usePrivy, useWallets } from "@privy-io/react-auth";
+import { usePrivy } from "@privy-io/react-auth";
 import { ArrowLeft } from "lucide-react";
 import { AuthGuard } from "@/components/layout/AuthGuard";
 import { Button } from "@/components/ui/Button";
@@ -17,15 +17,13 @@ import {
   TOKEN_ADDRESSES,
   TOKEN_DECIMALS,
 } from "@/lib/constants";
-import { invalidateBalances, useBalances } from "@/lib/hooks/useBalances";
-import { invalidatePositions } from "@/lib/hooks/usePositions";
-import { invalidateActivity } from "@/lib/hooks/useActivity";
-import { POSITION_RESYNC_DELAYS_MS } from "@/lib/constants";
+import { useBalances } from "@/lib/hooks/useBalances";
 import { AmountInput } from "@/components/deposit/AmountInput";
 import { DepositPreview } from "@/components/deposit/DepositPreview";
 import { usePreferences } from "@/lib/hooks/usePreferences";
 import { getDepositQuote } from "@/lib/api/composer";
 import { fetchVaults } from "@/lib/api/earn";
+import { useDepositFlow } from "@/lib/hooks/useDepositFlow";
 import {
   dailyEarnings,
   formatCurrency,
@@ -34,8 +32,6 @@ import {
 } from "@/lib/format";
 import { SUPPORTED_TOKENS, CHAIN_NAMES } from "@/lib/constants";
 import type { ComposerQuote, Vault } from "@/lib/types";
-
-type DepositStatus = "idle" | "quoting" | "confirming" | "success" | "error";
 
 function isValidToken(symbol: string): boolean {
   return SUPPORTED_TOKENS.some((t) => t.symbol === symbol);
@@ -51,9 +47,9 @@ function DepositPageContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const { user } = usePrivy();
-  const { wallets } = useWallets();
   const { preferences, update: updatePreferences } = usePreferences();
   const [riskModalOpen, setRiskModalOpen] = useState(false);
+  const depositFlow = useDepositFlow();
 
   const urlToken = searchParams.get("token");
   const urlVault = searchParams.get("vault");
@@ -71,9 +67,7 @@ function DepositPageContent() {
   const [amount, setAmount] = useState<string>("");
   const [vault, setVault] = useState<Vault | null>(null);
   const [quote, setQuote] = useState<ComposerQuote | null>(null);
-  const [status, setStatus] = useState<DepositStatus>("idle");
-  const [txHash, setTxHash] = useState<string>("");
-  const [errorMessage, setErrorMessage] = useState<string>("");
+  const [quoteStatus, setQuoteStatus] = useState<"idle" | "quoting">("idle");
   const [quoteError, setQuoteError] = useState<string>("");
 
   const walletAddress = user?.wallet?.address ?? "";
@@ -83,11 +77,27 @@ function DepositPageContent() {
     walletAddress || undefined,
   );
 
-  // Find balance for the currently selected token+chain
+  // Find balance for the currently selected token+chain (used by
+  // the Pro token selector which explicitly picks one chain).
   const selectedTokenBalance =
     walletBalances.find(
       (b) => b.symbol === tokenSelection.symbol && b.chainId === tokenSelection.chainId,
     )?.balanceFormatted ?? 0;
+
+  // Total balance for the selected token across EVERY supported
+  // chain. Lite mode uses this so the user sees all their dollars
+  // at once instead of being locked to whichever chain we auto-
+  // picked. At deposit time the flow splits the requested amount
+  // across chains (vault chain first, then by descending balance).
+  const aggregatedTokenBalance = walletBalances
+    .filter((b) => b.symbol === tokenSelection.symbol)
+    .reduce((sum, b) => sum + b.balanceFormatted, 0);
+
+  const isLite = preferences.mode === "lite";
+  // Lite mode gates validation on the aggregated total because it
+  // can plan a multi-chain deposit. Pro mode is locked to the chain
+  // the user picked in the TokenSelector.
+  const spendableBalance = isLite ? aggregatedTokenBalance : selectedTokenBalance;
 
   // Resolve vault: pro mode uses URL params, lite mode auto-fetches highest TVL
   useEffect(() => {
@@ -202,39 +212,69 @@ function DepositPageContent() {
     if (!balancesLoading && numericAmount > selectedTokenBalance) {
       setQuote(null);
       setQuoteError("");
-      setStatus("idle");
+      setQuoteStatus("idle");
       return;
     }
 
     const decimals = TOKEN_DECIMALS[tokenSelection.symbol] ?? 18;
     const fromAmount = toTokenUnits(numericAmount, decimals);
-    const fromTokenAddress = TOKEN_ADDRESSES[tokenSelection.symbol]?.[tokenSelection.chainId];
+    const fromTokenAddress =
+      TOKEN_ADDRESSES[tokenSelection.symbol]?.[tokenSelection.chainId];
 
     if (!fromTokenAddress) {
-      setQuoteError(`${tokenSelection.symbol} not available on ${CHAIN_NAMES[tokenSelection.chainId] ?? tokenSelection.chainId}`);
+      setQuoteError(
+        `${tokenSelection.symbol} not available on ${
+          CHAIN_NAMES[tokenSelection.chainId] ?? tokenSelection.chainId
+        }`
+      );
       setQuote(null);
       return;
     }
 
-    setStatus("quoting");
+    // Same-chain deposits go straight through an on-chain ERC4626
+    // deposit — no bridge, no swap, no preview quote needed. Skip
+    // the network call entirely instead of asking LI.FI to quote
+    // a no-op.
+    const underlyingAddress = vault.underlyingTokens[0]?.address;
+    if (
+      tokenSelection.chainId === vault.chainId &&
+      fromTokenAddress.toLowerCase() === underlyingAddress?.toLowerCase()
+    ) {
+      setQuote(null);
+      setQuoteError("");
+      setQuoteStatus("idle");
+      return;
+    }
+    if (!underlyingAddress) {
+      setQuote(null);
+      setQuoteStatus("idle");
+      return;
+    }
+
+    setQuoteStatus("quoting");
     setQuoteError("");
 
     try {
+      // Preview quote mirrors the bridge the execution flow will
+      // run — source token → underlying asset on the vault's
+      // chain. We don't pass the vault address as toToken because
+      // LI.FI's /quote only routes into swappable ERC20s, and
+      // most vault share tokens aren't. The real deposit happens
+      // after the bridge via a direct ERC4626.deposit call.
       const result = await getDepositQuote({
         fromChain: tokenSelection.chainId,
         toChain: vault.chainId,
         fromToken: fromTokenAddress,
-        toToken: vault.address,
+        toToken: underlyingAddress,
         fromAmount,
         fromAddress: walletAddress,
       });
       setQuote(result);
-      setStatus("idle");
-    } catch (err) {
-      const message = err instanceof Error ? err.message : "Could not fetch quote";
-      setQuoteError(message);
+      setQuoteStatus("idle");
+    } catch {
+      // Preview failed — not fatal, depositFlow handles execution.
       setQuote(null);
-      setStatus("idle");
+      setQuoteStatus("idle");
     }
   }, [amount, vault, walletAddress, tokenSelection, balancesLoading, selectedTokenBalance]);
 
@@ -263,86 +303,89 @@ function DepositPageContent() {
   }
 
   async function handleConfirm() {
-    if (!quote || !walletAddress) return;
+    if (!vault || !walletAddress) return;
 
-    const wallet = wallets.find((w) => w.address.toLowerCase() === walletAddress.toLowerCase()) ?? wallets[0];
-    if (!wallet) {
-      setErrorMessage("No wallet found. Please reconnect.");
-      setStatus("error");
-      return;
-    }
+    const symbol = tokenSelection.symbol;
+    const decimals = TOKEN_DECIMALS[symbol] ?? 18;
 
-    setStatus("confirming");
-    setErrorMessage("");
-
-    try {
-      const { transactionRequest } = quote;
-
-      // Switch wallet to the source chain (fromChain) for the quote
-      await wallet.switchChain(tokenSelection.chainId);
-
-      // Get the provider and send transaction — use wallet.address to ensure
-      // the `from` matches exactly what Privy expects
-      const provider = await wallet.getEthereumProvider();
-      const txHash = await provider.request({
-        method: "eth_sendTransaction",
-        params: [{
-          from: wallet.address,
-          to: transactionRequest.to,
-          data: transactionRequest.data,
-          value: transactionRequest.value && transactionRequest.value !== "0"
-            ? `0x${BigInt(transactionRequest.value).toString(16)}`
-            : undefined,
-        }],
+    // Lite mode taps every chain that holds the selected token.
+    // Pro mode is locked to whatever chain the user picked in the
+    // TokenSelector. Both paths feed the same multi-source
+    // depositFlow.start().
+    const eligible = walletBalances
+      .filter((b) => b.symbol === symbol && b.balanceFormatted > 0)
+      .filter((b) => !!TOKEN_ADDRESSES[symbol]?.[b.chainId])
+      .sort((a, b) => {
+        if (a.chainId === vault.chainId && b.chainId !== vault.chainId) return -1;
+        if (b.chainId === vault.chainId && a.chainId !== vault.chainId) return 1;
+        return b.balanceFormatted - a.balanceFormatted;
       });
 
-      setTxHash(txHash as string);
-      setStatus("success");
+    const sourcePool = isLite
+      ? eligible
+      : eligible.filter((b) => b.chainId === tokenSelection.chainId);
 
-      // Kick the shared caches so positions, balances, and activity
-      // all reflect the new deposit without the user needing to
-      // reload. Balances drop immediately on-chain, positions and
-      // activity lag the indexer by ~10–60s so we schedule several
-      // retries.
-      const walletAddress = wallet.address;
-      if (walletAddress) {
-        invalidateBalances(walletAddress).catch(() => {});
-        invalidatePositions(walletAddress).catch(() => {});
-        invalidateActivity(walletAddress).catch(() => {});
-        for (const ms of POSITION_RESYNC_DELAYS_MS) {
-          setTimeout(() => {
-            invalidateBalances(walletAddress).catch(() => {});
-            invalidatePositions(walletAddress).catch(() => {});
-            invalidateActivity(walletAddress).catch(() => {});
-          }, ms);
-        }
-      }
-    } catch (err) {
-      const message = err instanceof Error ? err.message : "Transaction failed";
-      setErrorMessage(message);
-      setStatus("error");
+    if (sourcePool.length === 0) return;
+
+    // Greedy allocator: walk chains in priority order and pull from
+    // each until the requested amount is covered. We work in raw
+    // base units throughout to avoid float drift.
+    const requestedRaw = BigInt(toTokenUnits(numericAmount, decimals));
+    let remaining = requestedRaw;
+    const sources: {
+      chainId: number;
+      tokenAddress: string;
+      tokenSymbol: string;
+      amountRaw: string;
+    }[] = [];
+
+    for (const balance of sourcePool) {
+      if (remaining <= BigInt(0)) break;
+      const tokenAddress = TOKEN_ADDRESSES[symbol]?.[balance.chainId];
+      if (!tokenAddress) continue;
+      const availableRaw = BigInt(
+        toTokenUnits(balance.balanceFormatted, decimals)
+      );
+      const take = availableRaw < remaining ? availableRaw : remaining;
+      if (take <= BigInt(0)) continue;
+      sources.push({
+        chainId: balance.chainId,
+        tokenAddress,
+        tokenSymbol: symbol,
+        amountRaw: take.toString(),
+      });
+      remaining -= take;
     }
+
+    if (sources.length === 0) return;
+
+    depositFlow.start({ sources, vault });
   }
 
   const numericAmount = parseFloat(amount);
   const validAmount = !isNaN(numericAmount) && numericAmount > 0;
-  // Only treat as "too much" once we actually know the balance (avoids
-  // flashing an error during the initial load before useBalances lands).
+  // Only treat as "too much" once we actually know the balance
+  // (avoids flashing an error during the initial load). Lite mode
+  // gates on the aggregated total across chains; Pro mode stays
+  // locked to whichever single chain the user picked.
   const insufficientBalance =
-    validAmount && !balancesLoading && numericAmount > selectedTokenBalance;
+    validAmount && !balancesLoading && numericAmount > spendableBalance;
+  const isExecuting =
+    depositFlow.state.phase === "quoting" ||
+    depositFlow.state.phase === "executing";
+  // We no longer gate on `quote` being present — depositFlow can run
+  // the real LI.FI route even if our lightweight preview quote 404s.
   const canSubmit =
     validAmount &&
     !insufficientBalance &&
     !!vault &&
-    !!quote &&
-    status !== "confirming" &&
-    status !== "quoting";
+    quoteStatus !== "quoting" &&
+    !isExecuting;
   const apy = vault?.analytics.apy.total ?? 0;
   const networkFeeUsd = quote
     ? parseFloat(quote.estimate.gasCosts[0]?.amountUSD ?? "0")
     : 0;
   const isCrossChain = vault !== null && tokenSelection.chainId !== vault.chainId;
-  const isLite = preferences.mode === "lite";
 
   // Gas sufficiency check — look up the user's native balance on the
   // source chain and compare to the estimated gas cost (plus 10% for
@@ -368,8 +411,9 @@ function DepositPageContent() {
     !insufficientBalance;
   const canSubmitWithGas = canSubmit && !insufficientGas;
 
-  const modalStatus =
-    status === "confirming" || status === "success" || status === "error" ? status : null;
+  // Modal state is now owned entirely by useDepositFlow — phase/steps
+  // drive the confirming/success/error view.
+  const modalStatus = depositFlow.modalStatus;
 
   return (
     <main className="flex flex-col min-h-dvh bg-sprout-gradient">
@@ -394,8 +438,8 @@ function DepositPageContent() {
                 How much do you want to earn on?
               </h2>
               <p className="text-sm text-sprout-text-muted">
-                {selectedTokenBalance > 0
-                  ? `You have ${selectedTokenBalance.toFixed(2)} ${tokenSelection.symbol}`
+                {aggregatedTokenBalance > 0
+                  ? `You have ${aggregatedTokenBalance.toFixed(2)} ${tokenSelection.symbol}`
                   : balancesLoading
                   ? "Checking balance..."
                   : "Enter any amount"}
@@ -405,27 +449,28 @@ function DepositPageContent() {
             <AmountInput
               value={amount}
               onChange={setAmount}
-              balance={selectedTokenBalance}
+              balance={aggregatedTokenBalance}
               symbol={tokenSelection.symbol}
               balanceLoading={balancesLoading}
             />
 
             <div className="flex items-center gap-2 px-2">
               {[0.25, 0.5, 0.75, 1].map((pct) => {
-                const disabled = selectedTokenBalance <= 0;
+                const disabled = aggregatedTokenBalance <= 0;
                 return (
                   <button
                     key={pct}
                     type="button"
                     disabled={disabled}
                     onClick={() => {
-                      if (selectedTokenBalance <= 0) return;
-                      // MAX uses the exact balance; lower percents
-                      // floor-round so they can never exceed it.
+                      if (aggregatedTokenBalance <= 0) return;
+                      // MAX uses the exact aggregated balance; lower
+                      // percents floor-round so they can never exceed
+                      // what the user actually holds across chains.
                       const raw =
                         pct === 1
-                          ? selectedTokenBalance
-                          : Math.floor(selectedTokenBalance * pct * 1_000_000) /
+                          ? aggregatedTokenBalance
+                          : Math.floor(aggregatedTokenBalance * pct * 1_000_000) /
                             1_000_000;
                       setAmount(String(raw));
                     }}
@@ -439,7 +484,7 @@ function DepositPageContent() {
 
             {insufficientBalance && (
               <p className="text-center text-xs text-sprout-red-stop font-semibold">
-                You only have {selectedTokenBalance.toFixed(4)} {tokenSelection.symbol}
+                You only have {aggregatedTokenBalance.toFixed(4)} {tokenSelection.symbol}
               </p>
             )}
             {!insufficientBalance && insufficientGas && (
@@ -447,7 +492,7 @@ function DepositPageContent() {
                 Need ~{gasCostNative.toFixed(6)} {nativeSymbol} for gas. Receive some {nativeSymbol} to continue.
               </p>
             )}
-            {!insufficientBalance && !insufficientGas && status === "quoting" && validAmount && (
+            {!insufficientBalance && !insufficientGas && quoteStatus === "quoting" && validAmount && (
               <p className="text-center text-xs text-sprout-text-muted animate-pulse">Finding best rate...</p>
             )}
             {!insufficientBalance && !insufficientGas && quoteError && (
@@ -497,16 +542,16 @@ function DepositPageContent() {
             <Button
               className="w-full"
               disabled={!canSubmitWithGas}
-              loading={status === "quoting" || status === "confirming"}
+              loading={quoteStatus === "quoting" || isExecuting}
               onClick={handlePrimaryAction}
             >
               {insufficientBalance
                 ? "Insufficient balance"
                 : insufficientGas
                 ? `Need ${nativeSymbol} for gas`
-                : status === "quoting"
+                : quoteStatus === "quoting"
                 ? "Finding best rate..."
-                : status === "confirming"
+                : isExecuting
                 ? "Confirming..."
                 : "Start Earning"}
             </Button>
@@ -599,7 +644,7 @@ function DepositPageContent() {
             )}
             {!insufficientBalance && !insufficientGas && validAmount && vault && (
               <>
-                {status === "quoting" ? (
+                {quoteStatus === "quoting" ? (
                   <div className="text-center py-4 text-sm text-sprout-text-muted animate-pulse">
                     Fetching best rate…
                   </div>
@@ -642,14 +687,14 @@ function DepositPageContent() {
             <Button
               className="w-full"
               disabled={!canSubmitWithGas}
-              loading={status === "confirming"}
+              loading={isExecuting}
               onClick={handlePrimaryAction}
             >
               {insufficientBalance
                 ? "Insufficient balance"
                 : insufficientGas
                 ? `Need ${nativeSymbol} for gas`
-                : status === "confirming"
+                : isExecuting
                 ? "Confirming…"
                 : "Confirm"}
             </Button>
@@ -666,11 +711,15 @@ function DepositPageContent() {
 
       <TransactionModal
         status={modalStatus}
-        txHash={txHash}
-        chainId={vault?.chainId}
-        errorMessage={errorMessage}
-        onClose={() => router.replace("/home")}
-        onRetry={() => setStatus("idle")}
+        txHash={depositFlow.state.finalTxHash}
+        chainId={depositFlow.state.finalChainId ?? vault?.chainId}
+        errorMessage={depositFlow.state.errorMessage}
+        steps={depositFlow.state.steps}
+        onClose={() => {
+          depositFlow.close();
+          if (modalStatus === "success") router.replace("/home");
+        }}
+        onRetry={depositFlow.retry}
       />
     </main>
   );

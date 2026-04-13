@@ -5,6 +5,7 @@ import { useWallets } from "@privy-io/react-auth";
 import { fetchVaults } from "@/lib/api/earn";
 import {
   POSITION_RESYNC_DELAYS_MS,
+  TOKEN_ADDRESSES,
   VAULT_MAX_PAGES,
   VAULT_PAGE_SIZE,
 } from "@/lib/constants";
@@ -28,6 +29,10 @@ interface FlowState {
   errorMessage: string;
   /** Amount requested on the current run — used by retry. Undefined means full. */
   requestedAmount?: number;
+  /** Optional destination chain for cross-chain exits. */
+  requestedDestinationChainId?: number;
+  /** Optional output token symbol chosen by the user. */
+  requestedOutputTokenSymbol?: string;
 }
 
 const INITIAL: FlowState = {
@@ -36,6 +41,8 @@ const INITIAL: FlowState = {
   quote: null,
   txHash: "",
   errorMessage: "",
+  requestedDestinationChainId: undefined,
+  requestedOutputTokenSymbol: undefined,
 };
 
 // On successful withdrawal: if the user withdrew the full position we
@@ -75,8 +82,18 @@ function markWithdrawn(
 }
 
 function matchVault(position: Position, vault: Vault): boolean {
+  if (vault.chainId !== position.chainId) return false;
+  // The position remap in usePositions resolves the exact vault
+  // share token the wallet holds on-chain and stamps it on
+  // position.vaultAddress. When present it's the canonical match
+  // — multiple vaults can share (chainId, protocolName, underlying),
+  // and picking the first one by that tuple is what caused the
+  // "no shares to redeem" error when a user held a different yo
+  // vault than the one `find` happened to pick.
+  if (position.vaultAddress) {
+    return vault.address.toLowerCase() === position.vaultAddress.toLowerCase();
+  }
   return (
-    vault.chainId === position.chainId &&
     vault.protocol.name === position.protocolName &&
     vault.underlyingTokens.some(
       (t) => t.address.toLowerCase() === position.asset.address.toLowerCase()
@@ -151,7 +168,14 @@ export function useWithdrawFlow() {
   );
 
   const run = useCallback(
-    async (position: Position, options?: { amount?: number }) => {
+    async (
+      position: Position,
+      options?: {
+        amount?: number;
+        destinationChainId?: number;
+        outputTokenSymbol?: string;
+      }
+    ) => {
       if (inFlightRef.current) return;
       inFlightRef.current = true;
       closedRef.current = false;
@@ -163,6 +187,8 @@ export function useWithdrawFlow() {
         txHash: "",
         errorMessage: "",
         requestedAmount: options?.amount,
+        requestedDestinationChainId: options?.destinationChainId,
+        requestedOutputTokenSymbol: options?.outputTokenSymbol,
       });
 
       try {
@@ -173,11 +199,30 @@ export function useWithdrawFlow() {
 
         const vault = await resolveVault(position);
 
+        // Resolve target chain + token. Default to the vault's
+        // own chain + underlying (direct redeem path). If either
+        // differs, the executor skips the direct probe and goes
+        // straight to LI.FI via the `preferLifiSwap` flag.
+        const destChainId =
+          options?.destinationChainId ?? position.chainId;
+        const destSymbol =
+          options?.outputTokenSymbol ?? position.asset.symbol;
+        const destTokenAddress =
+          TOKEN_ADDRESSES[destSymbol]?.[destChainId] ??
+          TOKEN_ADDRESSES["USDC"]?.[destChainId];
+
+        const isCustomExit =
+          destChainId !== position.chainId ||
+          destSymbol.toUpperCase() !== position.asset.symbol.toUpperCase();
+
         const { txHash, isFullWithdrawal } = await executeVaultWithdraw({
           wallet,
           position,
           vault,
           amount: options?.amount,
+          toChainId: isCustomExit ? destChainId : undefined,
+          toTokenAddress: isCustomExit ? destTokenAddress : undefined,
+          preferLifiSwap: isCustomExit,
           onConfirming: () => {
             safeSetState((s) => ({ ...s, phase: "confirming" }));
           },
@@ -197,8 +242,18 @@ export function useWithdrawFlow() {
 
   const retry = useCallback(() => {
     if (!state.position) return;
-    void run(state.position, { amount: state.requestedAmount });
-  }, [run, state.position, state.requestedAmount]);
+    void run(state.position, {
+      amount: state.requestedAmount,
+      destinationChainId: state.requestedDestinationChainId,
+      outputTokenSymbol: state.requestedOutputTokenSymbol,
+    });
+  }, [
+    run,
+    state.position,
+    state.requestedAmount,
+    state.requestedDestinationChainId,
+    state.requestedOutputTokenSymbol,
+  ]);
 
   const modalStatus: "confirming" | "success" | "error" | null =
     state.phase === "success"

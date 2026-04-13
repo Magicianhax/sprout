@@ -22,6 +22,7 @@ import { usePreferences } from "@/lib/hooks/usePreferences";
 import { usePositions } from "@/lib/hooks/usePositions";
 import { useBalances } from "@/lib/hooks/useBalances";
 import { useWithdrawFlow } from "@/lib/hooks/useWithdrawFlow";
+import { refreshEverything } from "@/lib/refresh";
 
 function PortfolioContent() {
   const router = useRouter();
@@ -38,6 +39,10 @@ function PortfolioContent() {
 
   const withdraw = useWithdrawFlow();
   const [partialPosition, setPartialPosition] = useState<Position | null>(null);
+
+  const handleRefresh = () => {
+    void refreshEverything(address);
+  };
 
   // Pro view groups positions by chain (helps users see chain-level
   // exposure at a glance). Lite view keeps the flat list.
@@ -92,10 +97,10 @@ function PortfolioContent() {
         </p>
         <button
           type="button"
-          onClick={reload}
+          onClick={handleRefresh}
           disabled={loading}
           className="p-2 rounded-full bg-sprout-card border border-sprout-border shadow-subtle text-sprout-text-primary cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
-          aria-label="Refresh positions"
+          aria-label="Refresh data"
         >
           <RefreshCw
             size={15}
@@ -132,7 +137,7 @@ function PortfolioContent() {
       {!loading && error && (
         <Card className="mx-5 text-center py-8">
           <p className="text-sprout-text-secondary mb-3">Couldn&apos;t load your positions</p>
-          <Button variant="secondary" onClick={reload}>Try again</Button>
+          <Button variant="secondary" onClick={handleRefresh}>Try again</Button>
         </Card>
       )}
 
@@ -224,9 +229,13 @@ function PortfolioContent() {
         open={partialPosition !== null}
         position={partialPosition}
         onClose={() => setPartialPosition(null)}
-        onConfirm={(position, amount) => {
+        onConfirm={(position, amount, destinationChainId, outputTokenSymbol) => {
           setPartialPosition(null);
-          void withdraw.start(position, { amount });
+          void withdraw.start(position, {
+            amount,
+            destinationChainId,
+            outputTokenSymbol,
+          });
         }}
       />
 

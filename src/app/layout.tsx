@@ -3,6 +3,7 @@ import { PrivyProvider } from "@/components/providers/PrivyProvider";
 import { ThemeSync } from "@/components/providers/ThemeSync";
 import { ServiceWorkerRegister } from "@/components/providers/ServiceWorkerRegister";
 import { InstallPrompt } from "@/components/providers/InstallPrompt";
+import { SuppressPrivyWarnings } from "@/components/providers/SuppressPrivyWarnings";
 import "./globals.css";
 
 export const metadata: Metadata = {
@@ -28,6 +29,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         <script src="/theme-init.js" async={false} />
       </head>
       <body className="font-body bg-sprout-gradient min-h-dvh">
+        <SuppressPrivyWarnings />
         <PrivyProvider>
           <ThemeSync />
           <ServiceWorkerRegister />

@@ -67,6 +67,16 @@ export interface Position {
   asset: PositionAsset;
   balanceUsd: string;
   balanceNative: string;
+  /** Vault share-token address reported by LI.FI. Used to cross-
+   *  reference against the vaults cache so we can correct the
+   *  protocolName when LI.FI's position response mislabels it. */
+  vaultAddress?: string;
+  /** Raw vault share balance in base units (hex-encoded, 0x
+   *  prefixed). Populated by the on-chain positions builder so
+   *  the withdraw flow can call `redeem(shares)` without having
+   *  to re-query `balanceOf` through a potentially lagging user
+   *  RPC. Absent when the Position came from another source. */
+  shareBalanceRaw?: string;
 }
 
 export interface PositionsResponse {
@@ -79,6 +89,27 @@ export interface Chain {
   networkCaip?: string;
 }
 
+export interface QuoteToken {
+  address: string;
+  chainId: number;
+  symbol?: string;
+  decimals?: number;
+}
+
+export interface QuoteAction {
+  fromChainId?: number;
+  toChainId?: number;
+  fromToken?: QuoteToken;
+  toToken?: QuoteToken;
+}
+
+export interface QuoteIncludedStep {
+  id?: string;
+  type?: string;
+  tool?: string;
+  action?: QuoteAction;
+}
+
 export interface ComposerQuote {
   transactionRequest: {
     to: string;
@@ -88,6 +119,13 @@ export interface ComposerQuote {
     gasPrice?: string;
     chainId: number;
   };
+  action?: QuoteAction;
+  // LI.FI routes this through Composer when the destination token is a
+  // vault share. `includedSteps` describes each hop (bridge, swap, then
+  // the vault deposit). If no step actually lands in the vault, LI.FI
+  // has silently fallen back to just bridging the underlying — the
+  // deposit page checks for this before sending the transaction.
+  includedSteps?: QuoteIncludedStep[];
   estimate: {
     fromAmount: string;
     toAmount: string;

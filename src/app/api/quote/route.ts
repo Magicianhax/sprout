@@ -6,6 +6,7 @@ import {
   MAX_SLIPPAGE,
   QUOTE_API_QUERY_ALLOWLIST,
 } from "@/lib/constants";
+import { getLifiIntegrator } from "@/lib/lifiIntegrator";
 
 const LIFI_API_KEY = process.env.LIFI_API_KEY;
 
@@ -33,9 +34,11 @@ function isAddress(v: string): boolean {
   return /^0x[0-9a-fA-F]{40}$/.test(v);
 }
 
-function validateAndFilterParams(
+async function validateAndFilterParams(
   input: URLSearchParams
-): { ok: true; params: URLSearchParams } | { ok: false; message: string } {
+): Promise<
+  { ok: true; params: URLSearchParams } | { ok: false; message: string }
+> {
   for (const key of REQUIRED_PARAMS) {
     if (!input.get(key)) {
       return { ok: false, message: `Missing required parameter: ${key}` };
@@ -79,6 +82,18 @@ function validateAndFilterParams(
   }
   out.set("slippage", String(slippage));
 
+  // Tag every quote with the integrator name registered against
+  // our LI.FI API key. Resolved from /v1/keys/test the first time
+  // it's needed and cached thereafter — hardcoding it was how we
+  // shipped the wrong value ("sprout" vs "sprout_app") and lost
+  // fee-share routing. When set, we also charge the 25 bps
+  // integrator fee so LI.FI forwards it on-chain via FeeForwarder.
+  const integrator = await getLifiIntegrator();
+  if (integrator) {
+    out.set("integrator", integrator);
+    out.set("fee", "0.0025");
+  }
+
   return { ok: true, params: out };
 }
 
@@ -91,7 +106,7 @@ export async function GET(request: NextRequest) {
     );
   }
 
-  const validated = validateAndFilterParams(request.nextUrl.searchParams);
+  const validated = await validateAndFilterParams(request.nextUrl.searchParams);
   if (!validated.ok) {
     return NextResponse.json(
       { message: validated.message },
