@@ -97,16 +97,36 @@ function DepositPageContent() {
         })
         .catch(() => setVault(null));
     } else {
-      // Lite mode: pick highest-TVL vault for the selected token on the same chain first
-      fetchVaults({ chainId: tokenSelection.chainId, asset: tokenSelection.symbol, sortBy: "tvl", limit: 1 })
-        .then((res) => {
-          if (res.data.length > 0) {
-            setVault(res.data[0]);
-          } else {
-            // No vault on this chain — try any chain
-            return fetchVaults({ asset: tokenSelection.symbol, sortBy: "tvl", limit: 1 })
-              .then((res2) => setVault(res2.data[0] ?? null));
-          }
+      // Lite / smart pick: fetch a candidate set of low-risk vaults
+      // for this token and choose the one with the best APY that
+      // still has meaningful TVL. Filters out risky vaults (IL risk,
+      // leveraged, etc.) and obvious dust vaults.
+      fetchVaults({
+        chainId: tokenSelection.chainId,
+        asset: tokenSelection.symbol,
+        sortBy: "apy",
+        limit: 20,
+      })
+        .then((res) =>
+          res.data.length > 0
+            ? res.data
+            : // No candidate on the user's chain — widen to any chain
+              fetchVaults({
+                asset: tokenSelection.symbol,
+                sortBy: "apy",
+                limit: 20,
+              }).then((res2) => res2.data)
+        )
+        .then((candidates: Vault[]) => {
+          const MIN_TVL = 1_000_000; // $1M — don't pick dust vaults
+          const safe = candidates.filter((v) => {
+            const tags = v.tags ?? [];
+            if (tags.includes("il-risk") || tags.includes("leveraged")) return false;
+            const tvl = parseFloat(v.analytics.tvl.usd || "0");
+            return tvl >= MIN_TVL;
+          });
+          const pick = (safe.length > 0 ? safe : candidates)[0];
+          setVault(pick ?? null);
         })
         .catch(() => setVault(null));
     }

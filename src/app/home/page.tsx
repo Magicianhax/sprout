@@ -25,6 +25,9 @@ import { useVaults } from "@/lib/hooks/useVaults";
 import { useActivity } from "@/lib/hooks/useActivity";
 import { useBalances } from "@/lib/hooks/useBalances";
 import { priceFor, usePrices } from "@/lib/hooks/usePrices";
+import { useSmartWithdrawFlow } from "@/lib/hooks/useSmartWithdrawFlow";
+import { SmartWithdrawModal } from "@/components/portfolio/SmartWithdrawModal";
+import { TransactionModal } from "@/components/deposit/TransactionModal";
 import { getRiskLevel } from "@/lib/format";
 import { CHAIN_NAMES, HOME_PAGE_SIZE } from "@/lib/constants";
 import { displayProtocol } from "@/lib/protocols";
@@ -46,6 +49,8 @@ function LiteHome() {
   const { balances } = useBalances(address);
   const prices = usePrices();
   const { vaults } = useVaults();
+  const smartWithdraw = useSmartWithdrawFlow();
+  const [withdrawOpen, setWithdrawOpen] = useState(false);
 
   const hasPositions = positions.length > 0;
 
@@ -135,7 +140,7 @@ function LiteHome() {
             </Button>
             <button
               className="text-center text-sm text-sprout-red-stop font-semibold py-1 cursor-pointer"
-              onClick={() => router.push("/portfolio")}
+              onClick={() => setWithdrawOpen(true)}
             >
               Stop Earning
             </button>
@@ -156,6 +161,38 @@ function LiteHome() {
       )}
 
       <BottomNav />
+
+      <SmartWithdrawModal
+        open={withdrawOpen}
+        onClose={() => setWithdrawOpen(false)}
+        positions={positions}
+        vaults={vaults}
+        totalEarningUsd={totalBalance}
+        onConfirm={(usd) => {
+          setWithdrawOpen(false);
+          void smartWithdraw.start(usd, positions);
+        }}
+      />
+
+      <TransactionModal
+        status={smartWithdraw.modalStatus}
+        intent="withdraw"
+        txHash={
+          smartWithdraw.state.completed[
+            smartWithdraw.state.completed.length - 1
+          ]?.txHash
+        }
+        chainId={
+          smartWithdraw.state.plan[smartWithdraw.state.currentStepIndex]?.position
+            .chainId
+        }
+        errorMessage={smartWithdraw.state.errorMessage}
+        onClose={() => {
+          smartWithdraw.close();
+          reload();
+        }}
+        onRetry={smartWithdraw.retry}
+      />
     </main>
   );
 }
