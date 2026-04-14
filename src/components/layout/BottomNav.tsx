@@ -24,7 +24,7 @@ export function BottomNav() {
   ];
 
   return (
-    <nav className="fixed bottom-0 left-0 right-0 bg-white border-t border-sprout-border flex flex-col z-50">
+    <nav className="fixed bottom-0 left-1/2 -translate-x-1/2 w-full max-w-[480px] bg-white border-t border-sprout-border flex flex-col z-50">
       <PoweredByLifi className="py-1 text-[10px]" />
       <div className="flex py-2 pb-5 border-t border-sprout-border/50">
         {tabs.map((tab) => {

@@ -53,7 +53,7 @@ export function InstallPrompt() {
 
   return (
     <div
-      className="fixed bottom-[118px] left-0 right-0 z-[55] flex justify-center px-5 pointer-events-none"
+      className="fixed bottom-[118px] left-1/2 -translate-x-1/2 w-full max-w-[480px] z-[55] flex justify-center px-5 pointer-events-none"
       aria-live="polite"
     >
       <div className="pointer-events-auto w-full max-w-[420px] flex items-center gap-3 bg-sprout-card border border-sprout-border rounded-2xl px-4 py-3 shadow-card">

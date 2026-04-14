@@ -39,6 +39,25 @@ body {
   background: linear-gradient(180deg, #E8F5E9 0%, #FFF8E1 40%, #FFFFFF 100%);
 }
 
+/* Phone-frame layout — constrain the app to a mobile width on every
+   viewport so desktop mirrors the native phone experience. `main` is
+   the per-page root; Header and BottomNav use centered fixed
+   positioning to sit inside the same frame. */
+main {
+  max-width: 480px;
+  margin-inline: auto;
+  position: relative;
+}
+
+@media (min-width: 520px) {
+  body {
+    background: linear-gradient(180deg, #e5e7eb 0%, #f3f4f6 100%) !important;
+  }
+  html.dark body {
+    background: linear-gradient(180deg, #020a07 0%, #04120c 100%) !important;
+  }
+}
+
 /* Skeleton shimmer — a soft gradient sweep that respects the active
    theme via CSS variables below. */
 .sprout-shimmer {

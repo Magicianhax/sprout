@@ -42,7 +42,7 @@ export function Header() {
 
   return (
     <>
-      <header className="fixed top-0 left-0 right-0 z-40 flex justify-between items-center px-5 pt-4 pb-3 bg-sprout-card/80 backdrop-blur-md border-b border-sprout-border/50">
+      <header className="fixed top-0 left-1/2 -translate-x-1/2 w-full max-w-[480px] z-40 flex justify-between items-center px-5 pt-4 pb-3 bg-sprout-card/80 backdrop-blur-md border-b border-sprout-border/50">
         <button
           type="button"
           onClick={() => router.push("/home")}
