@@ -303,6 +303,7 @@ function DepositPageContent() {
         toTokenAddress: vault.address,
         fromAddress: walletAddress,
         toAddress: walletAddress,
+        options: { slippage: DEFAULT_SLIPPAGE },
       });
       const best = response.routes?.[0];
       if (best) {

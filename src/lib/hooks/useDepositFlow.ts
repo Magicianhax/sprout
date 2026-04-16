@@ -10,7 +10,10 @@ import {
   type Route,
   type RouteExtended,
 } from "@lifi/sdk";
-import { POSITION_RESYNC_DELAYS_MS } from "@/lib/constants";
+import {
+  DEFAULT_SLIPPAGE,
+  POSITION_RESYNC_DELAYS_MS,
+} from "@/lib/constants";
 import { encodeBalanceOf } from "@/lib/depositEncoder";
 import { invalidateBalances } from "@/lib/hooks/useBalances";
 import {
@@ -408,6 +411,17 @@ export function useDepositFlow() {
             // engine picks the best path (1-tx Across/Stargate
             // destination call when available, else a multi-step
             // route the SDK will chain).
+            //
+            // Slippage is passed explicitly per-call rather than
+            // relying on createConfig.routeOptions defaults: the
+            // SDK merges config into the top-level request, but
+            // LI.FI's engine will then pick tighter per-sub-step
+            // slippage (often 0.5%) inside the returned route even
+            // when our top-level tolerance is 1%. Explicit per-call
+            // slippage gives the engine the full 1% headroom on
+            // every hop, which is what fragile paths (Pendle PT
+            // routes, newer stable mints) need to clear during
+            // execution.
             primaryRoute = await tryGetRoutes({
               fromChainId: src.chainId,
               fromTokenAddress: src.tokenAddress,
@@ -416,6 +430,7 @@ export function useDepositFlow() {
               toTokenAddress: args.vault.address,
               fromAddress: wallet.address,
               toAddress: wallet.address,
+              options: { slippage: DEFAULT_SLIPPAGE },
             });
           }
 
@@ -433,6 +448,7 @@ export function useDepositFlow() {
               toTokenAddress: underlying.address,
               fromAddress: wallet.address,
               toAddress: wallet.address,
+              options: { slippage: DEFAULT_SLIPPAGE },
             });
             needsTail = !!primaryRoute;
           }
@@ -570,6 +586,7 @@ export function useDepositFlow() {
               toTokenAddress: args.vault.address,
               fromAddress: wallet.address,
               toAddress: wallet.address,
+              options: { slippage: DEFAULT_SLIPPAGE },
             });
             if (!tailRoute) {
               throw new Error(

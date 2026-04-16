@@ -6,6 +6,7 @@ import {
   type RouteExtended,
   type UpdateRouteHook,
 } from "@lifi/sdk";
+import { DEFAULT_SLIPPAGE } from "@/lib/constants";
 import { toTokenUnits } from "@/lib/format";
 import {
   encodeBalanceOf,
@@ -220,6 +221,12 @@ async function findAndExecuteLifi(
     toTokenAddress: toToken,
     fromAddress: wallet.address,
     toAddress: wallet.address,
+    // Explicit slippage — the SDK merges createConfig defaults into
+    // the request, but LI.FI's routing engine tightens per-sub-step
+    // slippage below our top-level tolerance. Passing it here
+    // ensures fragile withdraw paths (share-token → DEX → output)
+    // get the full 1% headroom on every hop instead of 0.5%.
+    options: { slippage: DEFAULT_SLIPPAGE },
   });
   if (!route) return null;
   try {
