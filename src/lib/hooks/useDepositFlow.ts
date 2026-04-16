@@ -3,26 +3,66 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useWallets } from "@privy-io/react-auth";
 import {
+  executeRoute,
   getRoutes,
-  getTransferStatus,
-  populateStep,
-  type LifiStep,
-} from "@/lib/api/lifiRoutes";
-import {
-  encodeAllowance,
-  encodeApprove,
-  encodeBalanceOf,
-  encodeDeposit,
-  MAX_UINT256,
-} from "@/lib/depositEncoder";
-import {
-  EXPLORER_TX_URL_BY_CHAIN,
-  POSITION_RESYNC_DELAYS_MS,
-} from "@/lib/constants";
+  resumeRoute,
+  stopRouteExecution,
+  type Route,
+  type RouteExtended,
+} from "@lifi/sdk";
+import { POSITION_RESYNC_DELAYS_MS } from "@/lib/constants";
+import { encodeBalanceOf } from "@/lib/depositEncoder";
 import { invalidateBalances } from "@/lib/hooks/useBalances";
-import { invalidatePositions } from "@/lib/hooks/usePositions";
+import {
+  invalidatePositions,
+  optimisticallyAddPosition,
+} from "@/lib/hooks/usePositions";
+import { seedVaultsIntoCache } from "@/lib/hooks/useVaults";
 import { invalidateActivity } from "@/lib/hooks/useActivity";
+import {
+  activeStepIndex,
+  finalTxFromRoute,
+  firstFailureMessage,
+  friendlyErrorMessage,
+  isSdkUserRejection,
+  routeToDepositSteps,
+  type DepositStepView,
+} from "@/lib/lifi/routeAdapter";
+import {
+  clearRoute,
+  loadRoute,
+  saveRoute,
+} from "@/lib/lifi/routePersistence";
 import type { Vault } from "@/lib/types";
+
+// Deposit flow powered by LI.FI Composer via @lifi/sdk. Uses
+// getRoutes (/v1/advanced/routes) rather than getQuote (/v1/quote):
+// advanced/routes is more permissive — it returns multi-step routes
+// LI.FI can chain internally (e.g. Across-with-destination-call that
+// shows up as one LiFiStep with includedSteps = [cross, protocol]).
+// /v1/quote bails when it can't find a single pre-bundled tx. The
+// Jumper frontend uses /v1/advanced/routes for the same reason.
+//
+// Two tiers, Composer always first — no user-facing knobs for
+// routing strategy (validated via LI.FI MCP: for a representative
+// failing pair the unfiltered getRoutes returned 9 valid Composer
+// options, all of which land in the vault. Any bridge allowlist
+// would actively block most of those routes for no user benefit):
+//
+//   1. getRoutes(toToken=vault, no bridge filter). Covers same-chain
+//      and cross-chain. LI.FI picks the best Composer route — 1-tx
+//      via Across/Stargate destination call when available, else a
+//      2-signature bridge+deposit that the SDK still orchestrates.
+//   2. getRoutes(toToken=underlying on dest chain), executeRoute,
+//      wait for bridged funds, then a same-chain Composer deposit.
+//      Only kicks in when tier 1 couldn't land in the vault —
+//      happens for protocols Composer doesn't support on the dest
+//      chain, or when Composer's destination-call path silently
+//      degrades to plain bridge.
+//
+// The executeRoute helper drives every step. User doesn't need to
+// keep the tab open mid-bridge; SDK handles status polling and
+// destination chain switch automatically.
 
 export type DepositPhase =
   | "idle"
@@ -31,14 +71,7 @@ export type DepositPhase =
   | "success"
   | "error";
 
-export interface DepositStepView {
-  id: string;
-  label: string;
-  chainId?: number;
-  status: "pending" | "active" | "done" | "failed";
-  txHash?: string;
-  txLink?: string;
-}
+export type { DepositStepView } from "@/lib/lifi/routeAdapter";
 
 export interface DepositFlowState {
   phase: DepositPhase;
@@ -58,10 +91,30 @@ const INITIAL: DepositFlowState = {
   finalChainId: undefined,
 };
 
-function explorerLink(chainId: number | undefined, hash: string): string | undefined {
-  if (!chainId) return undefined;
-  const base = EXPLORER_TX_URL_BY_CHAIN[chainId];
-  return base ? `${base}${hash}` : undefined;
+export interface DepositSource {
+  chainId: number;
+  tokenAddress: string;
+  tokenSymbol: string;
+  amountRaw: string;
+}
+
+export interface StartDepositArgs {
+  sources: DepositSource[];
+  vault: Vault;
+}
+
+interface SourceProgress {
+  source: DepositSource;
+  // Routes executed for this source, in order. One for the direct-
+  // Composer case (single Route whose terminal step lands in the
+  // vault). Two for the tier-3 fallback (plain bridge Route, then a
+  // same-chain Composer Route that finishes the deposit).
+  routes: RouteExtended[];
+  placeholderLabel: string;
+}
+
+interface EthereumProvider {
+  request(args: { method: string; params?: unknown[] }): Promise<unknown>;
 }
 
 function scheduleResync(walletAddress: string): void {
@@ -77,84 +130,102 @@ function scheduleResync(walletAddress: string): void {
   }
 }
 
-interface EthereumProvider {
-  request(args: { method: string; params?: unknown[] }): Promise<unknown>;
-}
-
-async function waitForReceipt(
-  provider: EthereumProvider,
-  txHash: string,
-  maxMs = 180_000
-): Promise<void> {
-  const start = Date.now();
-  let delay = 2_000;
-  while (Date.now() - start < maxMs) {
-    try {
-      const receipt = (await provider.request({
-        method: "eth_getTransactionReceipt",
-        params: [txHash],
-      })) as { status?: string } | null;
-      if (receipt && receipt.status !== undefined) {
-        if (receipt.status === "0x1") return;
-        throw new Error("Transaction reverted on-chain.");
+function sortSources(
+  sources: DepositSource[],
+  destChainId: number
+): DepositSource[] {
+  return sources
+    .filter((s) => {
+      try {
+        return BigInt(s.amountRaw) > BigInt(0);
+      } catch {
+        return false;
       }
-    } catch (err) {
-      if (err instanceof Error && err.message.includes("reverted")) throw err;
-    }
-    await new Promise((r) => setTimeout(r, delay));
-    delay = Math.min(delay * 1.2, 5_000);
-  }
-  throw new Error("Timed out waiting for transaction confirmation.");
+    })
+    .sort((a, b) => {
+      // Same-chain first (no bridge), then cross-chain in descending
+      // amount order. Matches the previous planner so retry semantics
+      // don't change.
+      if (a.chainId === destChainId && b.chainId !== destChainId) return -1;
+      if (b.chainId === destChainId && a.chainId !== destChainId) return 1;
+      try {
+        const diff = BigInt(b.amountRaw) - BigInt(a.amountRaw);
+        return diff > BigInt(0) ? 1 : diff < BigInt(0) ? -1 : 0;
+      } catch {
+        return 0;
+      }
+    });
 }
 
-async function waitForBridge(
-  txHash: string,
-  fromChain: number,
-  toChain: number,
-  tool: string | undefined,
-  maxMs = 600_000
-): Promise<void> {
-  const start = Date.now();
-  let delay = 4_000;
-  while (Date.now() - start < maxMs) {
-    try {
-      const status = await getTransferStatus({
-        txHash,
-        fromChain,
-        toChain,
-        bridge: tool,
+function buildSteps(
+  progress: SourceProgress[],
+  vault: Vault
+): DepositStepView[] {
+  const steps: DepositStepView[] = [];
+  for (const p of progress) {
+    if (p.routes.length === 0) {
+      steps.push({
+        id: `source-${p.source.chainId}-${p.source.tokenAddress}`,
+        label: p.placeholderLabel,
+        chainId: p.source.chainId,
+        status: "pending",
       });
-      if (status.status === "DONE") return;
-      if (status.status === "FAILED" || status.status === "INVALID") {
-        throw new Error(
-          status.substatusMessage || "Bridge step failed before landing."
-        );
-      }
-    } catch (err) {
-      if (err instanceof Error && err.message.startsWith("Bridge")) throw err;
+      continue;
     }
-    await new Promise((r) => setTimeout(r, delay));
-    delay = Math.min(delay * 1.25, 8_000);
+    for (const route of p.routes) {
+      steps.push(...routeToDepositSteps(route, vault));
+    }
   }
-  throw new Error("Timed out waiting for the bridge to complete.");
+  return steps;
 }
 
-async function readAllowance(
-  provider: EthereumProvider,
-  token: string,
-  owner: string,
-  spender: string
-): Promise<bigint> {
-  const data = encodeAllowance(owner, spender);
+function buildActiveIndex(progress: SourceProgress[]): number {
+  let offset = 0;
+  for (const p of progress) {
+    if (p.routes.length === 0) return offset;
+    for (const route of p.routes) {
+      const local = activeStepIndex(route);
+      if (local >= 0) return offset + local;
+      offset += route.steps.length;
+    }
+  }
+  return -1;
+}
+
+/**
+ * True when the route's final step actually deposits into `vault`.
+ * Composer activated → terminal toToken is the vault share. If it's
+ * anything else we know the route is "bridge only" and we need the
+ * tier-3 deposit tail.
+ */
+function routeDepositsIntoVault(
+  route: Route | RouteExtended,
+  vault: Vault
+): boolean {
+  if (route.steps.length === 0) return false;
+  const last = route.steps[route.steps.length - 1];
+  const terminalToken = last.action?.toToken?.address;
+  if (!terminalToken) return false;
+  return (
+    terminalToken.toLowerCase() === vault.address.toLowerCase() &&
+    last.action.toChainId === vault.chainId
+  );
+}
+
+async function tryGetRoutes(
+  params: Parameters<typeof getRoutes>[0]
+): Promise<Route | null> {
   try {
-    const result = (await provider.request({
-      method: "eth_call",
-      params: [{ to: token, data }, "latest"],
-    })) as string;
-    if (!result || result === "0x") return BigInt(0);
-    return BigInt(result);
-  } catch {
-    return BigInt(0);
+    const response = await getRoutes(params);
+    // Response.routes is ordered by the routing engine — routes[0] is
+    // always the best match for the options (CHEAPEST unless we ask
+    // otherwise). We don't inspect unavailableRoutes for now.
+    return response.routes?.[0] ?? null;
+  } catch (err) {
+    // Quote-time failures are tolerated — caller tries the next tier.
+    // Execution-time failures bubble up separately via executeRoute.
+    console.info("[deposit] getRoutes failed", err);
+    return null;
   }
 }
 
@@ -177,13 +248,10 @@ async function readErc20Balance(
 }
 
 /**
- * Poll the wallet's balance on the destination chain until it
- * reflects at least `minimumRaw` of the expected token. LI.FI's
- * /v1/status returns DONE as soon as their tracker sees the fill
- * mined, but the user's RPC may still lag by a block or two —
- * trying to deposit at that instant reverts with "transfer amount
- * exceeds balance". Expected caller has already switched the
- * wallet to the destination chain.
+ * Wait for the bridged tokens to actually show up on the destination
+ * chain's RPC. LI.FI's /v1/status can flip to DONE a block or two
+ * before the user's provider reflects the credit — firing the same-
+ * chain Composer route before that causes it to quote zero.
  */
 async function waitForDestinationBalance(
   provider: EthereumProvider,
@@ -206,58 +274,13 @@ async function waitForDestinationBalance(
   );
 }
 
-async function switchWalletChain(
-  wallet: { switchChain: (id: number) => Promise<unknown> },
-  provider: EthereumProvider,
-  chainId: number
-): Promise<void> {
-  await wallet.switchChain(chainId);
-  const hex = (await provider.request({ method: "eth_chainId" })) as string;
-  if (parseInt(hex, 16) !== chainId) {
-    throw new Error(
-      "Wallet is on the wrong chain. Please switch networks and retry."
-    );
-  }
-}
-
-/**
- * Single funding source for a deposit. `amountRaw` is in the source
- * token's base units. Multiple sources can target the same vault —
- * the flow bridges each non-vault-chain source in sequence and then
- * does a single approve + deposit on the vault chain with the total
- * received amount.
- */
-export interface DepositSource {
-  chainId: number;
-  tokenAddress: string;
-  tokenSymbol: string;
-  amountRaw: string;
-}
-
-export interface StartDepositArgs {
-  sources: DepositSource[];
-  vault: Vault;
-}
-
-type PlanStepKind = "bridge" | "directFund" | "approve" | "deposit";
-
-interface PlanStep {
-  kind: PlanStepKind;
-  view: DepositStepView;
-  lifiStep?: LifiStep;
-  source?: DepositSource;
-  /** True when this bridge sub-step is the last one in its route —
-   *  only the last sub-step contributes `toAmountMin` to the running
-   *  deposit total (intermediate steps feed the next on-chain). */
-  isRouteTerminal?: boolean;
-}
-
 export function useDepositFlow() {
   const { wallets } = useWallets();
   const [state, setState] = useState<DepositFlowState>(INITIAL);
   const mountedRef = useRef(true);
   const inFlightRef = useRef(false);
   const lastArgsRef = useRef<StartDepositArgs | null>(null);
+  const progressRef = useRef<SourceProgress[]>([]);
 
   useEffect(() => {
     mountedRef.current = true;
@@ -278,9 +301,32 @@ export function useDepositFlow() {
     []
   );
 
+  const publishProgress = useCallback(
+    (vault: Vault) => {
+      const steps = buildSteps(progressRef.current, vault);
+      const active = buildActiveIndex(progressRef.current);
+      safeSet((prev) => ({
+        ...prev,
+        steps,
+        activeStepIndex: active,
+      }));
+    },
+    [safeSet]
+  );
+
   const close = useCallback(() => {
     inFlightRef.current = false;
     lastArgsRef.current = null;
+    for (const p of progressRef.current) {
+      for (const route of p.routes) {
+        try {
+          stopRouteExecution(route);
+        } catch {
+          // ignore — best-effort
+        }
+      }
+    }
+    progressRef.current = [];
     safeSet(INITIAL);
   }, [safeSet]);
 
@@ -303,353 +349,330 @@ export function useDepositFlow() {
         }
 
         const destChainId = args.vault.chainId;
-        const destTokenAddress = underlying.address;
         const protocolLabel =
           args.vault.protocol.name.replace(/-/g, " ") || "vault";
-
-        safeSet({ ...INITIAL, phase: "quoting" });
-
-        // Normalise sources: put same-chain first (they're free), then
-        // cross-chain in order of descending amount. Also drop zero
-        // amounts so we never book empty steps.
-        const sortedSources = args.sources
-          .filter((s) => {
-            try {
-              return BigInt(s.amountRaw) > BigInt(0);
-            } catch {
-              return false;
-            }
-          })
-          .sort((a, b) => {
-            if (a.chainId === destChainId && b.chainId !== destChainId) return -1;
-            if (b.chainId === destChainId && a.chainId !== destChainId) return 1;
-            try {
-              const diff = BigInt(b.amountRaw) - BigInt(a.amountRaw);
-              return diff > BigInt(0) ? 1 : diff < BigInt(0) ? -1 : 0;
-            } catch {
-              return 0;
-            }
-          });
-
-        if (sortedSources.length === 0) {
+        const sorted = sortSources(args.sources, destChainId);
+        if (sorted.length === 0) {
           throw new Error("Nothing to deposit — every source amount is zero.");
         }
 
-        // ── Plan ──────────────────────────────────────────────
-        // - One bridge step per cross-chain source.
-        // - One directFund marker per same-chain source (no tx, just
-        //   tallies into the running total so the UI can show it).
-        // - One shared approve + deposit at the end with the full
-        //   landed amount.
-        const plan: PlanStep[] = [];
-
-        for (const src of sortedSources) {
-          if (src.chainId === destChainId) {
-            plan.push({
-              kind: "directFund",
-              source: src,
-              view: {
-                id: `direct-${src.chainId}`,
-                label: `Use ${src.tokenSymbol} on vault chain`,
-                chainId: src.chainId,
-                status: "pending",
-              },
-            });
-          } else {
-            const { routes } = await getRoutes({
-              fromChainId: src.chainId,
-              toChainId: destChainId,
-              fromTokenAddress: src.tokenAddress,
-              toTokenAddress: destTokenAddress,
-              fromAmount: src.amountRaw,
-              fromAddress: wallet.address,
-              toAddress: wallet.address,
-            });
-            const route = routes?.[0];
-            if (!route || !route.steps?.length) {
-              throw new Error(
-                `No bridge route found from chain ${src.chainId} to chain ${destChainId}.`
-              );
-            }
-            // LI.FI may return multi-step routes (swap → bridge →
-            // swap). Every step needs a user signature, so we add
-            // one plan entry per step. Only the last step's
-            // toAmountMin counts toward the deposit total —
-            // intermediate outputs feed directly into the next step
-            // on-chain.
-            route.steps.forEach((lifiStep, idx) => {
-              const isLast = idx === route.steps.length - 1;
-              const fromChain = lifiStep.action?.fromChainId ?? src.chainId;
-              const toChain = lifiStep.action?.toChainId ?? destChainId;
-              const crossChain = fromChain !== toChain;
-              const fromSym = lifiStep.action?.fromToken?.symbol ?? src.tokenSymbol;
-              const toSym = lifiStep.action?.toToken?.symbol ?? underlying.symbol;
-              const label = crossChain
-                ? `Bridge ${fromSym} → ${toSym}`
-                : `Swap ${fromSym} → ${toSym}`;
-              plan.push({
-                kind: "bridge",
-                lifiStep,
-                source: src,
-                isRouteTerminal: isLast,
-                view: {
-                  id: `bridge-${lifiStep.id}-${idx}`,
-                  label,
-                  chainId: fromChain,
-                  status: "pending",
-                },
-              });
-            });
-          }
-        }
-
-        plan.push({
-          kind: "approve",
-          view: {
-            id: "approve",
-            label: `Approve ${underlying.symbol}`,
-            chainId: destChainId,
-            status: "pending",
-          },
-        });
-
-        plan.push({
-          kind: "deposit",
-          view: {
-            id: "deposit",
-            label: `Deposit into ${protocolLabel}`,
-            chainId: destChainId,
-            status: "pending",
-          },
-        });
+        progressRef.current = sorted.map((src) => ({
+          source: src,
+          routes: [],
+          placeholderLabel:
+            src.chainId === destChainId
+              ? `Deposit ${src.tokenSymbol} into ${protocolLabel}`
+              : `Bridge ${src.tokenSymbol} & deposit into ${protocolLabel}`,
+        }));
 
         safeSet({
           ...INITIAL,
-          phase: "executing",
-          steps: plan.map((p, i) =>
-            i === 0 ? { ...p.view, status: "active" } : p.view
-          ),
+          phase: "quoting",
+          steps: buildSteps(progressRef.current, args.vault),
           activeStepIndex: 0,
         });
 
-        // ── Execute ───────────────────────────────────────────
-        // Running total of underlying-asset base units currently
-        // sitting on the destination chain ready to be deposited.
-        // Each same-chain source adds its own amountRaw directly.
-        // Each bridge step adds `toAmountMin` (safe lower bound).
-        let depositAmountRaw = BigInt(0);
         let finalHash = "";
         let finalChainId: number | undefined;
 
-        const provider =
-          (await wallet.getEthereumProvider()) as EthereumProvider;
+        for (let i = 0; i < progressRef.current.length; i++) {
+          const src = progressRef.current[i].source;
+          const isCrossChain = src.chainId !== destChainId;
 
-        for (let i = 0; i < plan.length; i++) {
-          const step = plan[i];
-
-          safeSet((prev) => ({
-            ...prev,
-            activeStepIndex: i,
-            steps: prev.steps.map((v, idx) =>
-              idx === i ? { ...v, status: "active" } : v
-            ),
-          }));
-
-          if (step.kind === "directFund" && step.source) {
-            try {
-              depositAmountRaw += BigInt(step.source.amountRaw);
-            } catch {
-              // ignore
-            }
-          } else if (step.kind === "bridge" && step.lifiStep) {
-            // Prefer the original step's action for chain info —
-            // populateStep occasionally returns a patched step
-            // without the full action tree, and crashing on
-            // `fresh.action.fromChainId` is a nasty UX failure.
-            const original = step.lifiStep;
-            const fresh = await populateStep(original);
-            const tx = fresh.transactionRequest;
-            const stepFromChainId =
-              fresh.action?.fromChainId ?? original.action?.fromChainId;
-            const stepToChainId =
-              fresh.action?.toChainId ?? original.action?.toChainId;
-            const targetChainId =
-              tx?.chainId ?? stepFromChainId;
-
-            if (
-              !tx?.to ||
-              !tx?.data ||
-              typeof targetChainId !== "number"
-            ) {
-              throw new Error("Bridge step is missing transaction data.");
-            }
-
-            await switchWalletChain(wallet, provider, targetChainId);
-
-            const hash = (await provider.request({
-              method: "eth_sendTransaction",
-              params: [
-                {
-                  from: wallet.address,
-                  to: tx.to,
-                  data: tx.data,
-                  value:
-                    tx.value && tx.value !== "0"
-                      ? `0x${BigInt(tx.value).toString(16)}`
-                      : undefined,
-                },
-              ],
-            })) as string;
-
-            safeSet((prev) => ({
-              ...prev,
-              steps: prev.steps.map((v, idx) =>
-                idx === i
-                  ? {
-                      ...v,
-                      txHash: hash,
-                      txLink: explorerLink(targetChainId, hash),
-                    }
-                  : v
-              ),
-            }));
-
-            await waitForReceipt(provider, hash);
-
-            // Only poll the LI.FI status endpoint for actual
-            // cross-chain hops. An intermediate same-chain swap
-            // step in a compound route doesn't need it.
-            if (
-              typeof stepFromChainId === "number" &&
-              typeof stepToChainId === "number" &&
-              stepFromChainId !== stepToChainId
-            ) {
-              await waitForBridge(
-                hash,
-                stepFromChainId,
-                stepToChainId,
-                fresh.tool ?? original.tool
-              );
-            }
-
-            // Only tally the terminal step of each route — every
-            // intermediate step's output is consumed by the next
-            // on-chain action, so adding it would double-count.
-            if (step.isRouteTerminal) {
-              const estimate = fresh.estimate ?? original.estimate;
-              const minOut =
-                estimate?.toAmountMin ?? estimate?.toAmount;
-              if (minOut) {
-                try {
-                  depositAmountRaw += BigInt(minOut);
-                } catch {
-                  // keep running total
-                }
-              }
-            }
-          } else if (step.kind === "approve") {
-            if (depositAmountRaw <= BigInt(0)) {
-              throw new Error(
-                "Nothing landed on the destination chain to deposit."
-              );
-            }
-            await switchWalletChain(wallet, provider, destChainId);
-
-            // Wait for the bridged tokens to actually show up on
-            // the destination chain. LI.FI's /v1/status can flip
-            // to DONE a block or two before the user's RPC
-            // reflects it, and skipping this would hand us a
-            // "transfer amount exceeds balance" revert on the
-            // deposit. We only require the planned deposit
-            // amount — any extra pre-existing balance on the
-            // vault chain is *not* folded in, because the user
-            // didn't ask to deposit it.
-            await waitForDestinationBalance(
-              provider,
-              destTokenAddress,
-              wallet.address,
-              depositAmountRaw
+          // ── Resume handling ──────────────────────────────────
+          // If a previous attempt persisted a route for this source
+          // (same wallet, vault, source chain) and it hasn't finished,
+          // pick up where we left off instead of quoting fresh.
+          const resumed = loadRoute({
+            walletAddress: wallet.address,
+            vaultChainId: destChainId,
+            vaultAddress: args.vault.address,
+            sourceChainId: src.chainId,
+          });
+          const hasLiveResumed =
+            !!resumed &&
+            resumed.steps.some(
+              (s) =>
+                !s.execution ||
+                (s.execution.status !== "DONE" &&
+                  s.execution.status !== "FAILED")
             );
 
-            const current = await readAllowance(
-              provider,
-              destTokenAddress,
-              wallet.address,
-              args.vault.address
-            );
+          // ── Quote tier selection ─────────────────────────────
+          let primaryRoute: Route | null = hasLiveResumed
+            ? (resumed as Route)
+            : null;
 
-            if (current >= depositAmountRaw) {
-              safeSet((prev) => ({
-                ...prev,
-                steps: prev.steps.map((v, idx) =>
-                  idx === i ? { ...v, status: "done" } : v
-                ),
-              }));
-              continue;
-            }
-
-            const data = encodeApprove(args.vault.address, MAX_UINT256);
-            const hash = (await provider.request({
-              method: "eth_sendTransaction",
-              params: [
-                {
-                  from: wallet.address,
-                  to: destTokenAddress,
-                  data,
-                },
-              ],
-            })) as string;
-
-            safeSet((prev) => ({
-              ...prev,
-              steps: prev.steps.map((v, idx) =>
-                idx === i
-                  ? { ...v, txHash: hash, txLink: explorerLink(destChainId, hash) }
-                  : v
-              ),
-            }));
-
-            await waitForReceipt(provider, hash);
-          } else if (step.kind === "deposit") {
-            await switchWalletChain(wallet, provider, destChainId);
-
-            if (depositAmountRaw <= BigInt(0)) {
-              throw new Error("Deposit amount is zero.");
-            }
-
-            const data = encodeDeposit(depositAmountRaw, wallet.address);
-            const hash = (await provider.request({
-              method: "eth_sendTransaction",
-              params: [
-                {
-                  from: wallet.address,
-                  to: args.vault.address,
-                  data,
-                },
-              ],
-            })) as string;
-
-            safeSet((prev) => ({
-              ...prev,
-              steps: prev.steps.map((v, idx) =>
-                idx === i
-                  ? { ...v, txHash: hash, txLink: explorerLink(destChainId, hash) }
-                  : v
-              ),
-            }));
-
-            await waitForReceipt(provider, hash);
-
-            finalHash = hash;
-            finalChainId = destChainId;
+          if (!primaryRoute) {
+            // Tier 1: Composer. No bridge filter — LI.FI's routing
+            // engine picks the best path (1-tx Across/Stargate
+            // destination call when available, else a multi-step
+            // route the SDK will chain).
+            primaryRoute = await tryGetRoutes({
+              fromChainId: src.chainId,
+              fromTokenAddress: src.tokenAddress,
+              fromAmount: src.amountRaw,
+              toChainId: destChainId,
+              toTokenAddress: args.vault.address,
+              fromAddress: wallet.address,
+              toAddress: wallet.address,
+            });
           }
 
-          safeSet((prev) => ({
-            ...prev,
-            steps: prev.steps.map((v, idx) =>
-              idx === i ? { ...v, status: "done" } : v
-            ),
-          }));
+          // Tier 2 preflight: if Composer couldn't route at all AND
+          // the source is cross-chain, ask for a plain bridge to the
+          // underlying on the destination chain. We'll follow it up
+          // with a same-chain Composer deposit once funds land.
+          let needsTail = false;
+          if (!primaryRoute && isCrossChain) {
+            primaryRoute = await tryGetRoutes({
+              fromChainId: src.chainId,
+              fromTokenAddress: src.tokenAddress,
+              fromAmount: src.amountRaw,
+              toChainId: destChainId,
+              toTokenAddress: underlying.address,
+              fromAddress: wallet.address,
+              toAddress: wallet.address,
+            });
+            needsTail = !!primaryRoute;
+          }
+
+          if (!primaryRoute) {
+            throw new Error(
+              "No route available for this deposit. Try a larger amount, a different source chain, or a different token."
+            );
+          }
+
+          // Composer may have silently degraded (route's terminal
+          // toToken isn't the vault) — treat that like the plain-
+          // bridge tier 3 path so we follow up with a same-chain
+          // Composer deposit on the destination chain.
+          if (!routeDepositsIntoVault(primaryRoute, args.vault)) {
+            needsTail = true;
+          }
+
+          // ── Execute the primary route ────────────────────────
+          progressRef.current[i] = {
+            ...progressRef.current[i],
+            routes: [primaryRoute as RouteExtended],
+          };
+          saveRoute(
+            {
+              walletAddress: wallet.address,
+              vaultChainId: destChainId,
+              vaultAddress: args.vault.address,
+              sourceChainId: src.chainId,
+            },
+            primaryRoute
+          );
+
+          safeSet((prev) => ({ ...prev, phase: "executing" }));
+          publishProgress(args.vault);
+
+          const executionOpts = {
+            updateRouteHook: (updated: RouteExtended) => {
+              const entry = progressRef.current[i];
+              const nextRoutes = [...entry.routes];
+              nextRoutes[0] = updated;
+              progressRef.current[i] = { ...entry, routes: nextRoutes };
+              saveRoute(
+                {
+                  walletAddress: wallet.address,
+                  vaultChainId: destChainId,
+                  vaultAddress: args.vault.address,
+                  sourceChainId: src.chainId,
+                },
+                updated
+              );
+              publishProgress(args.vault);
+            },
+          };
+
+          const executedPrimary = hasLiveResumed
+            ? await resumeRoute(primaryRoute, executionOpts)
+            : await executeRoute(primaryRoute, executionOpts);
+
+          // Update ref with final state.
+          {
+            const entry = progressRef.current[i];
+            const nextRoutes = [...entry.routes];
+            nextRoutes[0] = executedPrimary;
+            progressRef.current[i] = { ...entry, routes: nextRoutes };
+          }
+          publishProgress(args.vault);
+
+          const primaryFailure = firstFailureMessage(executedPrimary);
+          if (primaryFailure) {
+            throw new Error(primaryFailure);
+          }
+
+          const primaryTx = finalTxFromRoute(executedPrimary);
+          if (primaryTx) {
+            finalHash = primaryTx.txHash;
+            finalChainId = primaryTx.chainId;
+          }
+
+          // ── Tier 2 tail: same-chain Composer deposit ─────────
+          if (needsTail) {
+            // Read the actual landed amount on the destination chain.
+            // LI.FI's toAmountMin is a safe lower bound but we can
+            // often deposit more if the bridge overdelivered — and
+            // more importantly the SDK doesn't automatically fund
+            // our next getRoutes with the terminal amount, so we
+            // have to measure ourselves.
+            const terminalStep =
+              executedPrimary.steps[executedPrimary.steps.length - 1];
+            const quotedMin = (() => {
+              try {
+                return BigInt(
+                  terminalStep.estimate?.toAmountMin ??
+                    terminalStep.estimate?.toAmount ??
+                    "0"
+                );
+              } catch {
+                return BigInt(0);
+              }
+            })();
+            if (quotedMin <= BigInt(0)) {
+              throw new Error(
+                "Couldn't determine the bridged amount to deposit."
+              );
+            }
+
+            const provider =
+              (await wallet.getEthereumProvider()) as EthereumProvider;
+            await waitForDestinationBalance(
+              provider,
+              underlying.address,
+              wallet.address,
+              quotedMin
+            );
+            const landed = await readErc20Balance(
+              provider,
+              underlying.address,
+              wallet.address
+            );
+            // Deposit the lower of landed vs (quotedMin × 1.001) — the
+            // tiny overshoot covers the rare case where landed is
+            // slightly over toAmountMin but we still don't want to
+            // touch a pre-existing destination balance.
+            const depositAmount = landed < quotedMin ? landed : quotedMin;
+
+            // Same-chain Composer deposit via a second getRoutes
+            // call. LI.FI picks the right deposit adapter for the
+            // protocol and bundles approve + deposit into one step
+            // whenever the protocol allows it.
+            const tailRoute = await tryGetRoutes({
+              fromChainId: destChainId,
+              fromTokenAddress: underlying.address,
+              fromAmount: depositAmount.toString(),
+              toChainId: destChainId,
+              toTokenAddress: args.vault.address,
+              fromAddress: wallet.address,
+              toAddress: wallet.address,
+            });
+            if (!tailRoute) {
+              throw new Error(
+                "Your funds arrived on the destination chain but LI.FI couldn't find a deposit route. You'll need to deposit manually."
+              );
+            }
+
+            // Append tail route to this source's route list so the UI
+            // shows Bridge + Deposit as sequential steps.
+            {
+              const entry = progressRef.current[i];
+              progressRef.current[i] = {
+                ...entry,
+                routes: [...entry.routes, tailRoute as RouteExtended],
+              };
+            }
+            publishProgress(args.vault);
+
+            const tailOpts = {
+              updateRouteHook: (updated: RouteExtended) => {
+                const entry = progressRef.current[i];
+                const nextRoutes = [...entry.routes];
+                nextRoutes[entry.routes.length - 1] = updated;
+                progressRef.current[i] = { ...entry, routes: nextRoutes };
+                publishProgress(args.vault);
+              },
+            };
+
+            const executedTail = await executeRoute(tailRoute, tailOpts);
+
+            // Persist final tail state.
+            {
+              const entry = progressRef.current[i];
+              const nextRoutes = [...entry.routes];
+              nextRoutes[entry.routes.length - 1] = executedTail;
+              progressRef.current[i] = { ...entry, routes: nextRoutes };
+            }
+            publishProgress(args.vault);
+
+            const tailFailure = firstFailureMessage(executedTail);
+            if (tailFailure) {
+              throw new Error(tailFailure);
+            }
+
+            const tailTx = finalTxFromRoute(executedTail);
+            if (tailTx) {
+              finalHash = tailTx.txHash;
+              finalChainId = tailTx.chainId;
+            }
+          }
+
+          // Source complete — clear its resume state.
+          clearRoute({
+            walletAddress: wallet.address,
+            vaultChainId: destChainId,
+            vaultAddress: args.vault.address,
+            sourceChainId: src.chainId,
+          });
+        }
+
+        // Optimistic position entry so the portfolio reflects the
+        // deposit immediately — LI.FI's /positions indexer and our
+        // /api/vault-shares Alchemy reader can each lag 5-60s, and
+        // we don't want the UI to show $0 earning for that window.
+        // Seeding the vault into the shared cache also guarantees
+        // augmentWithOnChainHoldings keeps probing it on subsequent
+        // resyncs even if the vault never streamed in via the
+        // TVL-sorted page fetch.
+        seedVaultsIntoCache([args.vault]);
+        try {
+          // Sum of all successful source amounts, converted to the
+          // underlying asset's decimals. Uses each source's quoted
+          // toAmountMin when available so the number already
+          // reflects slippage.
+          const underlying = args.vault.underlyingTokens[0];
+          if (underlying) {
+            let totalBase = BigInt(0);
+            for (const p of progressRef.current) {
+              const terminal = p.routes[p.routes.length - 1];
+              const lastStep = terminal?.steps[terminal.steps.length - 1];
+              const quoted =
+                lastStep?.estimate?.toAmountMin ??
+                lastStep?.estimate?.toAmount ??
+                "0";
+              try {
+                totalBase += BigInt(quoted);
+              } catch {
+                // skip malformed
+              }
+            }
+            if (totalBase > BigInt(0)) {
+              const underlyingAmount =
+                Number(totalBase) / Math.pow(10, underlying.decimals);
+              optimisticallyAddPosition(wallet.address, {
+                vault: args.vault,
+                underlyingAmount,
+              });
+            }
+          }
+        } catch (err) {
+          // Optimistic insertion is a nice-to-have — don't let it
+          // break the success path.
+          console.warn("[deposit] optimistic insert failed", err);
         }
 
         scheduleResync(wallet.address);
@@ -661,7 +684,10 @@ export function useDepositFlow() {
           finalChainId,
         }));
       } catch (err) {
-        const message = err instanceof Error ? err.message : "Deposit failed";
+        console.error("[deposit] flow failed", err);
+        const message = isSdkUserRejection(err)
+          ? "You cancelled the deposit in your wallet."
+          : friendlyErrorMessage(err);
         safeSet((prev) => ({
           ...prev,
           phase: "error",
@@ -674,7 +700,7 @@ export function useDepositFlow() {
         inFlightRef.current = false;
       }
     },
-    [wallets, safeSet]
+    [wallets, safeSet, publishProgress]
   );
 
   const start = useCallback(
@@ -687,6 +713,7 @@ export function useDepositFlow() {
   const retry = useCallback(() => {
     if (!lastArgsRef.current) return;
     const args = lastArgsRef.current;
+    progressRef.current = [];
     safeSet({ ...INITIAL });
     void run(args);
   }, [run, safeSet]);
@@ -695,10 +722,10 @@ export function useDepositFlow() {
     state.phase === "success"
       ? "success"
       : state.phase === "error"
-      ? "error"
-      : state.phase === "quoting" || state.phase === "executing"
-      ? "confirming"
-      : null;
+        ? "error"
+        : state.phase === "quoting" || state.phase === "executing"
+          ? "confirming"
+          : null;
 
   return { state, start, retry, close, modalStatus };
 }

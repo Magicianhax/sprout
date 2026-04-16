@@ -1,28 +1,48 @@
 import type { ConnectedWallet } from "@privy-io/react-auth";
+import {
+  executeRoute,
+  getRoutes,
+  type Route,
+  type RouteExtended,
+  type UpdateRouteHook,
+} from "@lifi/sdk";
 import { toTokenUnits } from "@/lib/format";
 import {
-  getRoutes,
-  getTransferStatus,
-  populateStep,
-  type LifiStep,
-} from "@/lib/api/lifiRoutes";
-import {
-  encodeAllowance,
-  encodeApprove,
-  MAX_UINT256,
+  encodeBalanceOf,
+  encodeRedeem,
+  encodeWithdraw,
 } from "@/lib/depositEncoder";
+import {
+  finalTxFromRoute,
+  firstFailureMessage,
+  isSdkUserRejection,
+} from "@/lib/lifi/routeAdapter";
 import type { Position, Vault } from "@/lib/types";
 
-// Function selectors (keccak256 first 4 bytes)
-const BALANCE_OF_SELECTOR = "0x70a08231"; // balanceOf(address)
-const REDEEM_SELECTOR = "0xba087652"; // redeem(uint256,address,address)
-const WITHDRAW_SELECTOR = "0xb460af94"; // withdraw(uint256,address,address)
+// Function selectors
 const ASSET_SELECTOR = "0x38d52e0f"; // asset() — ERC4626
 
+// Withdrawal priority (per product requirement):
+//   1. LI.FI getRoutes (Composer direct, or any swap/bridge route the
+//      engine can build from vault share → target token). Handles
+//      both same-chain and cross-chain exits in one call.
+//   2. Direct ERC4626 redeem/withdraw when LI.FI can't route but the
+//      user is exiting to the vault's own underlying on its own chain
+//      AND the vault passes the asset() probe.
+//   3. Cross-chain fallback: direct ERC4626 redeem on the vault's
+//      own chain (underlying lands with user), then a separate LI.FI
+//      route bridges the underlying to the user's chosen destination.
+//
+// Partial withdraws bypass LI.FI entirely — the SDK's routes take a
+// fromAmount in share-token units, and mapping "withdraw $50 of
+// underlying" to a share count cleanly would require a per-vault
+// conversion we don't carry. Partial exits always call
+// ERC4626.withdraw(assets) directly on the user's chain.
+
 /**
- * Sentinel error raised whenever the user explicitly cancels a
- * wallet prompt. We rethrow this without catching so the
- * withdraw flow stops instead of silently trying another path.
+ * Sentinel for explicit wallet cancellations. Propagates up without
+ * triggering silent fallbacks — a user who rejected a prompt doesn't
+ * want us to re-prompt on a different path.
  */
 class UserRejectedError extends Error {
   constructor(message = "Transaction cancelled by user.") {
@@ -32,12 +52,32 @@ class UserRejectedError extends Error {
 }
 
 /**
- * EIP-1193 providers signal a user rejection via code 4001
- * (the spec), but Privy's embedded wallet and some browser
- * extensions wrap it as -32603 with "rejected"/"denied" in the
- * message. Also matches ethers/viem style `ACTION_REJECTED`
- * strings. Any of these means "the user said no" — never a
- * reason to fall back to another route.
+ * Raised when every on-chain exit path — LI.FI routing, direct
+ * ERC4626 redeem, local redeem + bridge — fails for a vault. Happens
+ * for protocols whose share tokens lack DEX liquidity AND enforce a
+ * native withdrawal queue (Ether.fi Liquid, yoUSD). Carries the
+ * protocol's own app URL so the UI can show a "Withdraw at {app}"
+ * button instead of a generic error.
+ */
+export class ProtocolRedirectError extends Error {
+  readonly protocolName: string;
+  readonly protocolUrl: string | undefined;
+  constructor(protocolName: string, protocolUrl?: string) {
+    const pretty = protocolName.replace(/-/g, " ");
+    const base = protocolUrl
+      ? `This vault uses its own withdrawal flow. Exit from ${pretty} at ${protocolUrl}.`
+      : `This vault uses its own withdrawal flow. Open the ${pretty} app to exit.`;
+    super(base);
+    this.name = "ProtocolRedirectError";
+    this.protocolName = protocolName;
+    this.protocolUrl = protocolUrl;
+  }
+}
+
+/**
+ * Pre-SDK rejection shape (direct eth_sendTransaction). Matches
+ * EIP-1193 code 4001, Privy's wrapped -32603, and ethers/viem's
+ * ACTION_REJECTED strings.
  */
 function isUserRejection(err: unknown): boolean {
   if (!err || typeof err !== "object") return false;
@@ -56,13 +96,6 @@ function isUserRejection(err: unknown): boolean {
   );
 }
 
-/**
- * Cheap on-chain probe: does this vault implement ERC4626 and
- * return the underlying we expect? Used to decide whether to
- * try a direct redeem first or jump straight to LI.FI routing.
- * EtherFi's weETH, Lido's stETH, Curve LP wrappers, etc. all
- * fail this check and should exit via LI.FI swap.
- */
 async function supportsErc4626(
   provider: EthereumProvider,
   vaultAddress: string,
@@ -81,30 +114,6 @@ async function supportsErc4626(
   }
 }
 
-function hex32(value: string | bigint): string {
-  const hex =
-    typeof value === "bigint"
-      ? value.toString(16)
-      : value.replace(/^0x/, "").toLowerCase();
-  return hex.padStart(64, "0");
-}
-
-function encodeBalanceOf(holder: string): string {
-  return `${BALANCE_OF_SELECTOR}${hex32(holder)}`;
-}
-
-function encodeRedeem(shares: bigint, receiver: string, owner: string): string {
-  return `${REDEEM_SELECTOR}${hex32(shares)}${hex32(receiver)}${hex32(owner)}`;
-}
-
-function encodeWithdraw(
-  assets: bigint,
-  receiver: string,
-  owner: string
-): string {
-  return `${WITHDRAW_SELECTOR}${hex32(assets)}${hex32(receiver)}${hex32(owner)}`;
-}
-
 export interface WithdrawExecutorOptions {
   wallet: ConnectedWallet;
   position: Position;
@@ -112,22 +121,19 @@ export interface WithdrawExecutorOptions {
   /** Underlying asset amount (decimal). Undefined → full position. */
   amount?: number;
   /**
-   * Optional cross-chain / cross-token exit target. When set, the
-   * withdrawn funds end up as this token on this chain instead of
-   * the vault's underlying on the same chain.
+   * Optional cross-chain / cross-token exit target. When set, funds
+   * end up as this token on this chain. When both are undefined we
+   * default to the vault's own underlying on its own chain.
    */
   toChainId?: number;
   toTokenAddress?: string;
   /**
-   * Skip the direct ERC4626 redeem probe and go straight to LI.FI
-   * swap/bridge. Set when the user explicitly picked a different
-   * destination chain or output token — in those cases a same-
-   * chain redeem doesn't fulfil their intent anyway, and trying
-   * it first just wastes a wallet prompt on the rare edge case
-   * where the user's custom choice happens to match the default.
+   * @deprecated Kept for API compat with the old signature. The new
+   * priority always tries LI.FI first, so this flag no longer alters
+   * the flow. Safe to pass or omit.
    */
   preferLifiSwap?: boolean;
-  /** Fires once the tx has been crafted and we're about to prompt the wallet. */
+  /** Fires once the flow is about to start prompting the wallet. */
   onConfirming?: () => void;
 }
 
@@ -154,282 +160,137 @@ async function readBalance(
   return BigInt(result);
 }
 
-async function readAllowance(
-  provider: EthereumProvider,
-  token: string,
-  owner: string,
-  spender: string
-): Promise<bigint> {
-  const data = encodeAllowance(owner, spender);
+async function tryGetRoutes(
+  params: Parameters<typeof getRoutes>[0]
+): Promise<Route | null> {
   try {
-    const result = (await provider.request({
-      method: "eth_call",
-      params: [{ to: token, data }, "latest"],
-    })) as string;
-    if (!result || result === "0x") return BigInt(0);
-    return BigInt(result);
-  } catch {
-    return BigInt(0);
-  }
-}
-
-async function waitForReceipt(
-  provider: EthereumProvider,
-  txHash: string,
-  maxMs = 180_000
-): Promise<void> {
-  const start = Date.now();
-  let delay = 2_000;
-  while (Date.now() - start < maxMs) {
-    try {
-      const receipt = (await provider.request({
-        method: "eth_getTransactionReceipt",
-        params: [txHash],
-      })) as { status?: string } | null;
-      if (receipt && receipt.status !== undefined) {
-        if (receipt.status === "0x1") return;
-        throw new Error("Transaction reverted on-chain.");
-      }
-    } catch (err) {
-      if (err instanceof Error && err.message.includes("reverted")) throw err;
-    }
-    await new Promise((r) => setTimeout(r, delay));
-    delay = Math.min(delay * 1.2, 5_000);
-  }
-  throw new Error("Timed out waiting for transaction confirmation.");
-}
-
-async function waitForBridge(
-  txHash: string,
-  fromChain: number,
-  toChain: number,
-  tool: string | undefined,
-  maxMs = 600_000
-): Promise<void> {
-  const start = Date.now();
-  let delay = 4_000;
-  while (Date.now() - start < maxMs) {
-    try {
-      const status = await getTransferStatus({
-        txHash,
-        fromChain,
-        toChain,
-        bridge: tool,
-      });
-      if (status.status === "DONE") return;
-      if (status.status === "FAILED" || status.status === "INVALID") {
-        throw new Error(
-          status.substatusMessage || "Bridge step failed before landing."
-        );
-      }
-    } catch (err) {
-      if (err instanceof Error && err.message.startsWith("Bridge")) throw err;
-    }
-    await new Promise((r) => setTimeout(r, delay));
-    delay = Math.min(delay * 1.25, 8_000);
-  }
-  throw new Error("Timed out waiting for the bridge to complete.");
-}
-
-async function switchWalletChain(
-  wallet: ConnectedWallet,
-  provider: EthereumProvider,
-  chainId: number
-): Promise<void> {
-  await wallet.switchChain(chainId);
-  const hex = (await provider.request({ method: "eth_chainId" })) as string;
-  if (parseInt(hex, 16) !== chainId) {
-    throw new Error(
-      "Wallet is on the wrong chain. Please switch networks and retry."
-    );
-  }
-}
-
-/**
- * Sign every step in a LI.FI route in order, waiting for each to
- * land on-chain (and — if cross-chain — for LI.FI's /v1/status to
- * return DONE) before moving to the next. Returns the final tx
- * hash so the caller can surface an explorer link.
- */
-async function executeLifiRoute(
-  wallet: ConnectedWallet,
-  provider: EthereumProvider,
-  steps: LifiStep[]
-): Promise<string> {
-  let finalHash = "";
-  for (const original of steps) {
-    const fresh = await populateStep(original);
-    const tx = fresh.transactionRequest;
-    const stepFromChain =
-      fresh.action?.fromChainId ?? original.action?.fromChainId;
-    const stepToChain =
-      fresh.action?.toChainId ?? original.action?.toChainId;
-    const targetChainId = tx?.chainId ?? stepFromChain;
-
-    if (!tx?.to || !tx?.data || typeof targetChainId !== "number") {
-      throw new Error("Withdraw step is missing transaction data.");
-    }
-
-    await switchWalletChain(wallet, provider, targetChainId);
-
-    const hash = (await provider.request({
-      method: "eth_sendTransaction",
-      params: [
-        {
-          from: wallet.address,
-          to: tx.to,
-          data: tx.data,
-          value:
-            tx.value && tx.value !== "0"
-              ? `0x${BigInt(tx.value).toString(16)}`
-              : undefined,
-        },
-      ],
-    })) as string;
-
-    await waitForReceipt(provider, hash);
-
-    if (
-      typeof stepFromChain === "number" &&
-      typeof stepToChain === "number" &&
-      stepFromChain !== stepToChain
-    ) {
-      await waitForBridge(
-        hash,
-        stepFromChain,
-        stepToChain,
-        fresh.tool ?? original.tool
-      );
-    }
-
-    finalHash = hash;
-  }
-  return finalHash;
-}
-
-/**
- * Ensure `spender` has at least `amountRaw` allowance on `token`.
- * If not, prompt the user to approve MAX_UINT256. Used before
- * triggering a LI.FI swap that pulls vault shares from the wallet.
- */
-async function ensureAllowance(
-  wallet: ConnectedWallet,
-  provider: EthereumProvider,
-  token: string,
-  spender: string,
-  amountRaw: bigint
-): Promise<void> {
-  const current = await readAllowance(provider, token, wallet.address, spender);
-  if (current >= amountRaw) return;
-
-  const data = encodeApprove(spender, MAX_UINT256);
-  const hash = (await provider.request({
-    method: "eth_sendTransaction",
-    params: [{ from: wallet.address, to: token, data }],
-  })) as string;
-  await waitForReceipt(provider, hash);
-}
-
-/**
- * Try to exit the vault via LI.FI (swap vault share → output
- * token, optionally cross-chain). Returns the final tx hash on
- * success, or null if LI.FI has no route for this pair — the
- * caller should then fall back to direct ERC4626 redeem.
- */
-async function tryLifiWithdraw(
-  wallet: ConnectedWallet,
-  provider: EthereumProvider,
-  vault: Vault,
-  shares: bigint,
-  targetChainId: number,
-  targetTokenAddress: string
-): Promise<string | null> {
-  let routesResponse;
-  try {
-    routesResponse = await getRoutes({
-      fromChainId: vault.chainId,
-      toChainId: targetChainId,
-      fromTokenAddress: vault.address,
-      toTokenAddress: targetTokenAddress,
-      fromAmount: shares.toString(),
-      fromAddress: wallet.address,
-      toAddress: wallet.address,
-    });
-  } catch {
-    // Route lookup failed (no liquidity, upstream 400). Return
-    // null so the caller can fall back to direct redeem. Route
-    // lookups are pure API calls and can't be user-cancelled.
+    const response = await getRoutes(params);
+    return response.routes?.[0] ?? null;
+  } catch (err) {
+    console.info("[withdraw] getRoutes failed", err);
     return null;
   }
+}
 
-  const route = routesResponse.routes?.[0];
-  if (!route || !route.steps || route.steps.length === 0) return null;
-
-  // The first step must pull vault shares from the wallet. LI.FI
-  // routers (via their diamond) use transferFrom, so we need an
-  // explicit ERC20 approval first. Skip the step if the wallet
-  // already has sufficient allowance.
-  const spender = route.steps[0].estimate?.approvalAddress;
-  if (spender) {
-    await switchWalletChain(wallet, provider, vault.chainId);
-    try {
-      await ensureAllowance(wallet, provider, vault.address, spender, shares);
-    } catch (err) {
-      // User rejected the approval prompt — stop the flow
-      // entirely, don't silently fall back to direct redeem.
-      if (isUserRejection(err)) {
-        throw new UserRejectedError(
-          "You cancelled the approval. Withdrawal stopped."
-        );
+/**
+ * Execute a LI.FI route via the SDK. Fires onConfirming once the SDK
+ * first requests a wallet interaction so the UI can flip from
+ * "quoting" to "confirming" at the right moment. Returns the final
+ * tx hash or throws on failure / user rejection.
+ */
+async function executeWithdrawRoute(
+  route: Route,
+  onConfirming?: () => void
+): Promise<string | null> {
+  let notified = false;
+  const hook: UpdateRouteHook = (updated) => {
+    if (!notified) {
+      const active = updated.steps.some(
+        (s) =>
+          s.execution?.status === "ACTION_REQUIRED" ||
+          s.execution?.status === "PENDING"
+      );
+      if (active) {
+        notified = true;
+        onConfirming?.();
       }
-      return null;
     }
-  }
+  };
+  const executed = await executeRoute(route, { updateRouteHook: hook });
+  const failure = firstFailureMessage(executed);
+  if (failure) throw new Error(failure);
+  const tx = finalTxFromRoute(executed);
+  return tx?.txHash ?? null;
+}
 
+async function findAndExecuteLifi(
+  wallet: ConnectedWallet,
+  fromChain: number,
+  fromToken: string,
+  fromAmount: bigint,
+  toChain: number,
+  toToken: string,
+  onConfirming?: () => void
+): Promise<string | null> {
+  const route = await tryGetRoutes({
+    fromChainId: fromChain,
+    fromTokenAddress: fromToken,
+    fromAmount: fromAmount.toString(),
+    toChainId: toChain,
+    toTokenAddress: toToken,
+    fromAddress: wallet.address,
+    toAddress: wallet.address,
+  });
+  if (!route) return null;
   try {
-    const hash = await executeLifiRoute(wallet, provider, route.steps);
+    return await executeWithdrawRoute(route, onConfirming);
+  } catch (err) {
+    if (isSdkUserRejection(err) || isUserRejection(err)) {
+      throw new UserRejectedError(
+        "You cancelled the withdrawal in your wallet."
+      );
+    }
+    console.warn("[withdraw] LI.FI execution failed", err);
+    return null;
+  }
+}
+
+/**
+ * Direct ERC4626 redeem. Returns the tx hash. Throws
+ * UserRejectedError on wallet rejection — caller should not fall
+ * back silently in that case.
+ */
+async function executeDirectRedeem(
+  wallet: ConnectedWallet,
+  provider: EthereumProvider,
+  vaultAddress: string,
+  shares: bigint,
+  onConfirming?: () => void
+): Promise<string> {
+  onConfirming?.();
+  const data = encodeRedeem(shares, wallet.address, wallet.address);
+  try {
+    const hash = (await provider.request({
+      method: "eth_sendTransaction",
+      params: [{ from: wallet.address, to: vaultAddress, data }],
+    })) as string;
     return hash;
   } catch (err) {
-    // User rejected one of the route steps — bubble up and
-    // let the caller surface "cancelled by user" instead of
-    // falling back to another path.
     if (isUserRejection(err)) {
       throw new UserRejectedError(
         "You cancelled the withdrawal in your wallet."
       );
     }
-    // Non-rejection failure (rpc error, revert, timeout) —
-    // return null so the caller can try the direct path.
-    return null;
+    throw err;
   }
 }
 
 /**
- * Execute a single vault withdrawal. Priority order:
- *
- *   1. **Direct ERC4626 redeem** — if the vault passes the
- *      `asset()` probe and the user wants to receive the
- *      underlying on the vault's own chain, call `redeem(shares)`
- *      or `withdraw(assets)` straight on the vault contract.
- *      Zero slippage, one tx, always the right price.
- *
- *   2. **LI.FI swap / bridge** — used when any of:
- *        - the vault isn't ERC4626 (EtherFi weETH, Lido stETH,
- *          Curve LP wrappers — `asset()` either reverts or
- *          returns something other than `position.asset.address`),
- *        - the user picked a cross-chain exit,
- *        - the user picked a different output token than the
- *          vault's underlying,
- *        - or the direct redeem reverted at the wallet for any
- *          reason and we need a fallback.
- *      LI.FI's multi-step route is signed in order; share-token
- *      approval to its router is handled automatically.
- *
- * Partial withdrawals skip LI.FI entirely — LI.FI routes work
- * in fromAmount units and mapping a user's underlying-amount
- * request to the right share count is a per-vault conversion
- * we don't want to compute. Partial exits are always direct.
+ * Poll the destination-token balance until it reaches at least
+ * `minimumRaw`. Used between a direct ERC4626 redeem and a follow-up
+ * bridge leg — the redeem is synchronous but some vaults settle in
+ * the same tx the RPC hasn't yet indexed when we query.
  */
+async function waitForBalance(
+  provider: EthereumProvider,
+  token: string,
+  holder: string,
+  minimumRaw: bigint,
+  maxMs = 120_000
+): Promise<bigint> {
+  const start = Date.now();
+  let delay = 2_000;
+  while (Date.now() - start < maxMs) {
+    const current = await readBalance(provider, token, holder);
+    if (current >= minimumRaw) return current;
+    await new Promise((r) => setTimeout(r, delay));
+    delay = Math.min(delay * 1.25, 5_000);
+  }
+  throw new Error(
+    "Withdrawn funds haven't been indexed yet. Check your wallet in a minute."
+  );
+}
+
 export async function executeVaultWithdraw(
   opts: WithdrawExecutorOptions
 ): Promise<WithdrawExecutorResult> {
@@ -440,7 +301,6 @@ export async function executeVaultWithdraw(
     amount,
     toChainId,
     toTokenAddress,
-    preferLifiSwap,
     onConfirming,
   } = opts;
 
@@ -458,9 +318,7 @@ export async function executeVaultWithdraw(
   }
 
   await wallet.switchChain(position.chainId);
-  const provider =
-    (await wallet.getEthereumProvider()) as EthereumProvider;
-
+  const provider = (await wallet.getEthereumProvider()) as EthereumProvider;
   const chainHex = (await provider.request({
     method: "eth_chainId",
   })) as string;
@@ -468,13 +326,16 @@ export async function executeVaultWithdraw(
     throw new Error("Wallet is on the wrong chain. Please switch networks.");
   }
 
-  const resolvedTargetChain = toChainId ?? position.chainId;
-  const resolvedTargetToken = toTokenAddress ?? position.asset.address;
+  const destChain = toChainId ?? position.chainId;
+  const destToken = toTokenAddress ?? position.asset.address;
   const wantsDifferentOutput =
-    resolvedTargetChain !== position.chainId ||
-    resolvedTargetToken.toLowerCase() !== position.asset.address.toLowerCase();
+    destChain !== position.chainId ||
+    destToken.toLowerCase() !== position.asset.address.toLowerCase();
 
-  // ─── Partial withdrawal ──────────────────────────────────────
+  // ─── Partial withdrawal — direct ERC4626 only ──────────────
+  // No tier fallback: the SDK has no "withdraw X underlying"
+  // primitive, and partial cross-chain would need an additional
+  // conversion we don't carry.
   if (!isFullWithdrawal) {
     if (wantsDifferentOutput) {
       throw new Error(
@@ -488,7 +349,6 @@ export async function executeVaultWithdraw(
     }
 
     onConfirming?.();
-
     const data = encodeWithdraw(assets, wallet.address, wallet.address);
     try {
       const hash = (await provider.request({
@@ -506,13 +366,10 @@ export async function executeVaultWithdraw(
     }
   }
 
-  // ─── Full withdrawal ─────────────────────────────────────────
-  // Prefer the share count our on-chain positions builder
-  // already captured — it was read via Alchemy as part of
-  // /api/vault-shares, so it's the same RPC that confirmed the
-  // position exists. Reading again through the user's wallet
-  // provider sometimes races behind because Privy's default RPC
-  // for chains like Base occasionally lags a block or two.
+  // ─── Full withdrawal ───────────────────────────────────────
+  // Share count. Prefer the value stamped by our positions builder
+  // (read via Alchemy during the feed build) over the user's own
+  // RPC, which sometimes lags by a block on Base.
   let shares = BigInt(0);
   if (position.shareBalanceRaw) {
     try {
@@ -524,11 +381,6 @@ export async function executeVaultWithdraw(
   if (shares === BigInt(0)) {
     shares = await readBalance(provider, vault.address, wallet.address);
   }
-  // Last-resort: query Alchemy server-side via the same
-  // /api/vault-shares route that built the position in the
-  // first place. Covers the case where the user's wallet RPC
-  // is lagging but the authoritative Alchemy view still shows
-  // a balance.
   if (shares === BigInt(0)) {
     try {
       const res = await fetch("/api/vault-shares", {
@@ -556,77 +408,114 @@ export async function executeVaultWithdraw(
         }
       }
     } catch {
-      // ignore — fall through to the empty error below
+      // ignore
     }
   }
   if (shares === BigInt(0)) {
     throw new Error("No shares to redeem — position already empty.");
   }
 
-  // 1. Direct ERC4626 is preferred when the vault actually is
-  //    ERC4626 AND the user wants the vault's own underlying on
-  //    its own chain. `preferLifiSwap` lets callers (Pro mode
-  //    destination picker) skip the probe entirely — the user
-  //    explicitly asked for a different destination, we trust
-  //    them and route straight through LI.FI.
+  // Tier 1 — LI.FI Composer direct (preferred for any scenario,
+  // same-chain or cross-chain, Composer or swap/bridge route). This
+  // captures the integrator fee and routes via whichever path LI.FI
+  // thinks is best.
+  onConfirming?.();
+  const directLifiHash = await findAndExecuteLifi(
+    wallet,
+    vault.chainId,
+    vault.address,
+    shares,
+    destChain,
+    destToken,
+    onConfirming
+  );
+  if (directLifiHash) {
+    return { txHash: directLifiHash, isFullWithdrawal: true };
+  }
+
+  // Tier 2 — Direct ERC4626 redeem. Only usable when exiting to the
+  // vault's own underlying on its own chain AND the vault implements
+  // ERC4626 correctly. Zero slippage, one tx; the fee just doesn't
+  // get captured (no LI.FI in the loop).
   const canDirectRedeem =
-    !preferLifiSwap &&
     !wantsDifferentOutput &&
     (await supportsErc4626(provider, vault.address, position.asset.address));
 
   if (canDirectRedeem) {
-    onConfirming?.();
-    const data = encodeRedeem(shares, wallet.address, wallet.address);
-    try {
-      const hash = (await provider.request({
-        method: "eth_sendTransaction",
-        params: [{ from: wallet.address, to: vault.address, data }],
-      })) as string;
-      return { txHash: hash, isFullWithdrawal: true };
-    } catch (err) {
-      // User explicitly rejected the wallet prompt — stop the
-      // flow. Silently trying LI.FI next would re-prompt them
-      // and come across as Sprout ignoring their decision.
-      if (isUserRejection(err)) {
-        throw new UserRejectedError(
-          "You cancelled the withdrawal in your wallet."
-        );
+    return {
+      txHash: await executeDirectRedeem(
+        wallet,
+        provider,
+        vault.address,
+        shares,
+        onConfirming
+      ),
+      isFullWithdrawal: true,
+    };
+  }
+
+  // Tier 3 — Cross-chain fallback. LI.FI couldn't route vault share
+  // → target directly, but if the vault supports ERC4626 we can
+  // redeem to the vault's underlying locally, then bridge the
+  // underlying to the user's chosen destination via a fresh LI.FI
+  // route. Two signatures, but the user ends up where they asked.
+  if (wantsDifferentOutput) {
+    const canRedeemLocally = await supportsErc4626(
+      provider,
+      vault.address,
+      position.asset.address
+    );
+    if (canRedeemLocally) {
+      const redeemHash = await executeDirectRedeem(
+        wallet,
+        provider,
+        vault.address,
+        shares,
+        onConfirming
+      );
+
+      // Wait for the underlying to settle locally — ERC4626 vaults
+      // credit in the same block, but the user's RPC may lag.
+      const underlyingBalance = await waitForBalance(
+        provider,
+        position.asset.address,
+        wallet.address,
+        BigInt(1)
+      );
+      if (underlyingBalance <= BigInt(0)) {
+        // Shouldn't happen after waitForBalance succeeds, but we
+        // surface a real tx hash so the user can see the redeem
+        // succeeded even if the bridge leg didn't fire.
+        return { txHash: redeemHash, isFullWithdrawal: true };
       }
-      // Otherwise the direct redeem reverted for some non-user
-      // reason (vault gated withdrawals, gas estimation failed,
-      // etc.) — fall through to the LI.FI swap fallback.
-      console.warn("[withdraw] direct redeem reverted, trying LI.FI", err);
+
+      const bridgeHash = await findAndExecuteLifi(
+        wallet,
+        position.chainId,
+        position.asset.address,
+        underlyingBalance,
+        destChain,
+        destToken,
+        onConfirming
+      );
+      if (bridgeHash) {
+        return { txHash: bridgeHash, isFullWithdrawal: true };
+      }
+      // Bridge leg couldn't route. The redeem already succeeded — the
+      // user has their underlying on the vault's chain. Surface that
+      // tx and a clear error so they know where their funds are.
+      throw new Error(
+        "Withdrew to the vault's own chain, but LI.FI couldn't route a bridge to your chosen destination. Your underlying is on " +
+          `${position.asset.symbol} on chain ${position.chainId}. You can bridge it manually.`
+      );
     }
   }
 
-  // 2. LI.FI fallback: route the shares to the user's target
-  //    token, whether that's the vault's underlying on its own
-  //    chain (because the direct path wasn't available) or a
-  //    user-picked cross-chain / cross-token exit.
-  onConfirming?.();
-
-  const lifiHash = await tryLifiWithdraw(
-    wallet,
-    provider,
-    vault,
-    shares,
-    resolvedTargetChain,
-    resolvedTargetToken
-  );
-  if (lifiHash) {
-    return { txHash: lifiHash, isFullWithdrawal: true };
-  }
-
-  // Neither path works. If the user wanted a specific target
-  // we can't silently redeem to the vault's own chain — that
-  // would land funds in the wrong place.
-  if (wantsDifferentOutput) {
-    throw new Error(
-      "No exit route available for this vault share. Try receiving the vault's own chain, or pick a different destination."
-    );
-  }
-
   throw new Error(
-    "This vault doesn't support direct withdrawal and LI.FI has no swap route for its share token."
+    "This vault doesn't support direct withdrawal and LI.FI has no route for its share token."
   );
 }
+
+// Suppress unused-vars lint for RouteExtended — kept exported for
+// typing callers that may want to observe route shape in hooks.
+export type { RouteExtended };

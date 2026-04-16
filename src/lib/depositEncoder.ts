@@ -1,13 +1,26 @@
-// Minimal ABI encoders for ERC20 approval, allowance reads, and
-// ERC4626 deposit. We keep this hand-rolled (no viem/ethers) for
-// parity with withdrawExecutor.ts — the calldata format is simple
-// enough that a couple of padStarts are clearer than pulling in a
-// full encoder.
+// Minimal ABI encoders for the few direct-contract paths the LI.FI
+// SDK doesn't handle:
+//
+//   - encodeBalanceOf: used by the deposit hook to poll an ERC20
+//     balance on the destination chain, waiting for bridged funds
+//     to actually land before firing the same-chain Composer
+//     deposit tail. LI.FI's /status flips to DONE a block or two
+//     before the user's RPC reflects it, and an early deposit
+//     quote would return zero amount.
+//
+//   - encodeWithdraw / encodeRedeem: used by withdrawExecutor.ts
+//     for the partial-withdraw path (SDK has no "withdraw N
+//     underlying" primitive) and for the direct-redeem fallback
+//     when LI.FI can't route a vault-share exit.
+//
+// Approve / allowance / deposit encoders that used to live here
+// have been removed — Composer same-chain via getRoutes covers the
+// "bridge + deposit" tail path, so the SDK does the approve and
+// deposit itself. We kept no speculative helpers.
 
-const APPROVE_SELECTOR = "0x095ea7b3"; // approve(address,uint256)
-const ALLOWANCE_SELECTOR = "0xdd62ed3e"; // allowance(address,address)
 const BALANCE_OF_SELECTOR = "0x70a08231"; // balanceOf(address)
-const DEPOSIT_SELECTOR = "0x6e553f65"; // deposit(uint256,address)
+const WITHDRAW_SELECTOR = "0xb460af94"; // withdraw(uint256,address,address)
+const REDEEM_SELECTOR = "0xba087652"; // redeem(uint256,address,address)
 
 function hex32(value: string | bigint): string {
   const hex =
@@ -17,23 +30,22 @@ function hex32(value: string | bigint): string {
   return hex.padStart(64, "0");
 }
 
-export function encodeApprove(spender: string, amount: bigint): string {
-  return `${APPROVE_SELECTOR}${hex32(spender)}${hex32(amount)}`;
-}
-
-export function encodeAllowance(owner: string, spender: string): string {
-  return `${ALLOWANCE_SELECTOR}${hex32(owner)}${hex32(spender)}`;
-}
-
 export function encodeBalanceOf(holder: string): string {
   return `${BALANCE_OF_SELECTOR}${hex32(holder)}`;
 }
 
-export function encodeDeposit(assets: bigint, receiver: string): string {
-  return `${DEPOSIT_SELECTOR}${hex32(assets)}${hex32(receiver)}`;
+export function encodeWithdraw(
+  assets: bigint,
+  receiver: string,
+  owner: string
+): string {
+  return `${WITHDRAW_SELECTOR}${hex32(assets)}${hex32(receiver)}${hex32(owner)}`;
 }
 
-export const MAX_UINT256 =
-  BigInt(
-    "0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
-  );
+export function encodeRedeem(
+  shares: bigint,
+  receiver: string,
+  owner: string
+): string {
+  return `${REDEEM_SELECTOR}${hex32(shares)}${hex32(receiver)}${hex32(owner)}`;
+}

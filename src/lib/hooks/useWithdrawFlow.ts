@@ -17,14 +17,14 @@ import {
 import { invalidateActivity } from "@/lib/hooks/useActivity";
 import { invalidateBalances } from "@/lib/hooks/useBalances";
 import { executeVaultWithdraw } from "@/lib/withdrawExecutor";
-import type { ComposerQuote, Position, Vault } from "@/lib/types";
+import { friendlyErrorMessage } from "@/lib/lifi/routeAdapter";
+import type { Position, Vault } from "@/lib/types";
 
 type Phase = "idle" | "quoting" | "confirming" | "success" | "error";
 
 interface FlowState {
   phase: Phase;
   position: Position | null;
-  quote: ComposerQuote | null;
   txHash: string;
   errorMessage: string;
   /** Amount requested on the current run — used by retry. Undefined means full. */
@@ -38,7 +38,6 @@ interface FlowState {
 const INITIAL: FlowState = {
   phase: "idle",
   position: null,
-  quote: null,
   txHash: "",
   errorMessage: "",
   requestedDestinationChainId: undefined,
@@ -61,7 +60,8 @@ function markWithdrawn(
       walletAddress,
       position.chainId,
       position.asset.address,
-      position.protocolName
+      position.protocolName,
+      position.vaultAddress
     );
   }
   // Fire an immediate round so the user sees the change as soon as
@@ -183,7 +183,6 @@ export function useWithdrawFlow() {
       safeSetState({
         phase: "quoting",
         position,
-        quote: null,
         txHash: "",
         errorMessage: "",
         requestedAmount: options?.amount,
@@ -231,7 +230,15 @@ export function useWithdrawFlow() {
         markWithdrawn(position, wallet.address, isFullWithdrawal);
         safeSetState((s) => ({ ...s, phase: "success", txHash }));
       } catch (err) {
-        const message = err instanceof Error ? err.message : "Withdrawal failed";
+        console.error("[withdraw] flow failed", err);
+        // UserRejectedError carries a clean message; other errors get
+        // translated (LI.FI no-route / amount-too-low / etc.) so the
+        // user sees something they can act on instead of an SDK stack.
+        const isUserReject =
+          err instanceof Error && err.name === "UserRejectedError";
+        const message = isUserReject
+          ? err.message
+          : friendlyErrorMessage(err);
         safeSetState((s) => ({ ...s, phase: "error", errorMessage: message }));
       } finally {
         inFlightRef.current = false;

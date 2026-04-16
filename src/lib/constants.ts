@@ -120,9 +120,20 @@ export const POSITION_RESYNC_DELAYS_MS = [3000, 8000, 20000, 45000, 90000] as co
 export const API_FETCH_TIMEOUT_MS = 15000;
 export const RPC_FETCH_TIMEOUT_MS = 10000;
 
-// Safety caps for swap/bridge parameters forwarded to LI.FI
+// Safety caps for swap/bridge parameters forwarded to LI.FI.
+// DEFAULT_SLIPPAGE is what the SDK sends when we don't override.
+// 1% is the minimum that reliably clears Pendle PT paths, newer
+// stablecoin mints (USDai, etc.), and compounded multi-hop routes
+// (e.g. USDC→PYUSD→USDai→PT where each hop eats 0.5% and compounds
+// to ~1.5% at the top level). 0.5% was genuinely too tight for
+// vault deposits — stable→stable direct swaps survived it, but
+// anything that touched a newer protocol or a compound route hit
+// "Simulation Failed" in any wallet with a real simulator (Rabby,
+// MetaMask 12+). Real user cost at 1% is negligible because LI.FI
+// routes through the best DEX anyway — this is headroom, not a
+// price the user pays.
 export const MAX_SLIPPAGE = 0.03; // 3% hard cap
-export const DEFAULT_SLIPPAGE = 0.005; // 0.5% when client omits it
+export const DEFAULT_SLIPPAGE = 0.01; // 1% when client omits it
 
 // Allowlists for the earn API proxy (see /api/earn/[...path]/route.ts)
 export const EARN_API_PATH_ALLOWLIST: readonly RegExp[] = [
@@ -138,19 +149,6 @@ export const EARN_API_QUERY_ALLOWLIST = new Set([
   "sortBy",
   "limit",
   "cursor",
-] as const);
-
-// Allowlists for the quote proxy (see /api/quote/route.ts)
-export const QUOTE_API_QUERY_ALLOWLIST = new Set([
-  "fromChain",
-  "toChain",
-  "fromToken",
-  "toToken",
-  "fromAmount",
-  "fromAddress",
-  "toAddress",
-  "slippage",
-  "order",
 ] as const);
 
 export const DEFAULT_PREFERENCES = {

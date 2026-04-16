@@ -89,52 +89,6 @@ export interface Chain {
   networkCaip?: string;
 }
 
-export interface QuoteToken {
-  address: string;
-  chainId: number;
-  symbol?: string;
-  decimals?: number;
-}
-
-export interface QuoteAction {
-  fromChainId?: number;
-  toChainId?: number;
-  fromToken?: QuoteToken;
-  toToken?: QuoteToken;
-}
-
-export interface QuoteIncludedStep {
-  id?: string;
-  type?: string;
-  tool?: string;
-  action?: QuoteAction;
-}
-
-export interface ComposerQuote {
-  transactionRequest: {
-    to: string;
-    data: string;
-    value: string;
-    gasLimit: string;
-    gasPrice?: string;
-    chainId: number;
-  };
-  action?: QuoteAction;
-  // LI.FI routes this through Composer when the destination token is a
-  // vault share. `includedSteps` describes each hop (bridge, swap, then
-  // the vault deposit). If no step actually lands in the vault, LI.FI
-  // has silently fallen back to just bridging the underlying — the
-  // deposit page checks for this before sending the transaction.
-  includedSteps?: QuoteIncludedStep[];
-  estimate: {
-    fromAmount: string;
-    toAmount: string;
-    fromAmountUSD?: string;
-    toAmountUSD?: string;
-    gasCosts: { amountUSD: string; amount?: string }[];
-  };
-}
-
 export type RiskLevel = "low" | "medium" | "high";
 export type SortBy = "tvl" | "apy";
 

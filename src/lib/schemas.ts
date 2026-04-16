@@ -3,7 +3,6 @@
 // shape down to the fields we actually consume.
 
 import type {
-  ComposerQuote,
   Position,
   PositionsResponse,
   Vault,
@@ -26,29 +25,8 @@ function isAddress(v: unknown): v is string {
   return isString(v) && /^0x[0-9a-fA-F]{40}$/.test(v);
 }
 
-function isHexData(v: unknown): v is string {
-  return isString(v) && /^0x[0-9a-fA-F]*$/.test(v);
-}
-
 function isStringArray(v: unknown): v is string[] {
   return Array.isArray(v) && v.every(isString);
-}
-
-export function isComposerQuote(v: unknown): v is ComposerQuote {
-  if (!isObject(v)) return false;
-  const tx = v.transactionRequest;
-  if (!isObject(tx)) return false;
-  if (!isAddress(tx.to)) return false;
-  if (!isHexData(tx.data)) return false;
-  if (!isString(tx.value)) return false;
-  if (!isString(tx.gasLimit)) return false;
-  if (!isNumber(tx.chainId)) return false;
-  const est = v.estimate;
-  if (!isObject(est)) return false;
-  if (!isString(est.fromAmount)) return false;
-  if (!isString(est.toAmount)) return false;
-  if (!Array.isArray(est.gasCosts)) return false;
-  return true;
 }
 
 function isUnderlyingToken(v: unknown): boolean {

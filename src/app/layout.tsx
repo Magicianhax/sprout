@@ -1,6 +1,7 @@
 import type { Metadata, Viewport } from "next";
 import { Analytics } from "@vercel/analytics/next";
 import { PrivyProvider } from "@/components/providers/PrivyProvider";
+import { LifiSdkProvider } from "@/components/providers/LifiSdkProvider";
 import { ThemeSync } from "@/components/providers/ThemeSync";
 import { ServiceWorkerRegister } from "@/components/providers/ServiceWorkerRegister";
 import { InstallPrompt } from "@/components/providers/InstallPrompt";
@@ -43,10 +44,12 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
       <body className="font-body bg-sprout-gradient min-h-dvh">
         <SuppressPrivyWarnings />
         <PrivyProvider>
-          <ThemeSync />
-          <ServiceWorkerRegister />
-          <InstallPrompt />
-          {children}
+          <LifiSdkProvider>
+            <ThemeSync />
+            <ServiceWorkerRegister />
+            <InstallPrompt />
+            {children}
+          </LifiSdkProvider>
         </PrivyProvider>
         <Analytics />
       </body>

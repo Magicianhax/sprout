@@ -21,7 +21,7 @@ import { useBalances } from "@/lib/hooks/useBalances";
 import { AmountInput } from "@/components/deposit/AmountInput";
 import { DepositPreview } from "@/components/deposit/DepositPreview";
 import { usePreferences } from "@/lib/hooks/usePreferences";
-import { getDepositQuote } from "@/lib/api/composer";
+import { getRoutes, type Route } from "@lifi/sdk";
 import { fetchVaults } from "@/lib/api/earn";
 import { useDepositFlow } from "@/lib/hooks/useDepositFlow";
 import {
@@ -31,7 +31,47 @@ import {
   toTokenUnits,
 } from "@/lib/format";
 import { SUPPORTED_TOKENS, CHAIN_NAMES } from "@/lib/constants";
-import type { ComposerQuote, Vault } from "@/lib/types";
+import type { Vault } from "@/lib/types";
+
+// Minimal preview shape the UI reads. We pull these four fields from
+// the first route returned by getRoutes (/v1/advanced/routes) —
+// same endpoint the execution flow uses, so preview estimates
+// always match what the deposit will actually do. We used to hit
+// /v1/quote for this, but that endpoint is stricter and would 404
+// on pairs /v1/advanced/routes routes fine, causing spooky
+// "no quote" flashes that weren't real.
+interface PreviewEstimate {
+  fromAmountUSD?: string;
+  toAmountUSD?: string;
+  gasCosts: { amountUSD?: string; amount?: string }[];
+}
+
+function routeToPreview(route: Route): PreviewEstimate {
+  // Sum gas across all steps — multi-step routes (bridge + deposit)
+  // have gas on each leg. Take the aggregate for the UI's "Network
+  // fee" and gas-sufficiency check. Each step.estimate.gasCosts[0]
+  // is the SEND gas cost denominated in the step's source chain's
+  // native token, so summing them only makes sense in USD; the
+  // native-amount path uses step 0 specifically (source chain).
+  const allGasCosts = route.steps.flatMap(
+    (s) => s.estimate?.gasCosts ?? []
+  );
+  const totalGasUSD = allGasCosts.reduce((sum, g) => {
+    const n = parseFloat(g.amountUSD ?? "0");
+    return Number.isFinite(n) ? sum + n : sum;
+  }, 0);
+  const sourceGas = route.steps[0]?.estimate?.gasCosts?.[0];
+  return {
+    fromAmountUSD: route.fromAmountUSD,
+    toAmountUSD: route.toAmountUSD,
+    gasCosts: [
+      {
+        amountUSD: totalGasUSD > 0 ? totalGasUSD.toFixed(4) : "0",
+        amount: sourceGas?.amount,
+      },
+    ],
+  };
+}
 
 function isValidToken(symbol: string): boolean {
   return SUPPORTED_TOKENS.some((t) => t.symbol === symbol);
@@ -66,7 +106,7 @@ function DepositPageContent() {
   });
   const [amount, setAmount] = useState<string>("");
   const [vault, setVault] = useState<Vault | null>(null);
-  const [quote, setQuote] = useState<ComposerQuote | null>(null);
+  const [quote, setQuote] = useState<{ estimate: PreviewEstimate } | null>(null);
   const [quoteStatus, setQuoteStatus] = useState<"idle" | "quoting">("idle");
   const [quoteError, setQuoteError] = useState<string>("");
 
@@ -231,20 +271,13 @@ function DepositPageContent() {
       return;
     }
 
-    // Same-chain deposits go straight through an on-chain ERC4626
-    // deposit — no bridge, no swap, no preview quote needed. Skip
-    // the network call entirely instead of asking LI.FI to quote
-    // a no-op.
+    // Preview quote mirrors the execution flow — LI.FI Composer
+    // bundles bridge + swap + vault deposit into one route when
+    // we pass the vault address as toToken. Same-chain same-
+    // underlying is still worth quoting because Composer returns
+    // the actual deposit tx (with FeeForwarder attribution) and
+    // the preview needs the estimate to show gas costs.
     const underlyingAddress = vault.underlyingTokens[0]?.address;
-    if (
-      tokenSelection.chainId === vault.chainId &&
-      fromTokenAddress.toLowerCase() === underlyingAddress?.toLowerCase()
-    ) {
-      setQuote(null);
-      setQuoteError("");
-      setQuoteStatus("idle");
-      return;
-    }
     if (!underlyingAddress) {
       setQuote(null);
       setQuoteStatus("idle");
@@ -255,21 +288,28 @@ function DepositPageContent() {
     setQuoteError("");
 
     try {
-      // Preview quote mirrors the bridge the execution flow will
-      // run — source token → underlying asset on the vault's
-      // chain. We don't pass the vault address as toToken because
-      // LI.FI's /quote only routes into swappable ERC20s, and
-      // most vault share tokens aren't. The real deposit happens
-      // after the bridge via a direct ERC4626.deposit call.
-      const result = await getDepositQuote({
-        fromChain: tokenSelection.chainId,
-        toChain: vault.chainId,
-        fromToken: fromTokenAddress,
-        toToken: underlyingAddress,
+      // Preview hits the EXACT same endpoint as the execution flow —
+      // /v1/advanced/routes via the SDK. We used to call /v1/quote
+      // here (it's a simpler endpoint that returns one bundled
+      // transaction) but it bails on pairs that advanced/routes
+      // handles fine, so the UI would flash "no route" for deposits
+      // that actually work. Using the same endpoint as execution
+      // guarantees preview and reality agree.
+      const response = await getRoutes({
+        fromChainId: tokenSelection.chainId,
+        fromTokenAddress: fromTokenAddress,
         fromAmount,
+        toChainId: vault.chainId,
+        toTokenAddress: vault.address,
         fromAddress: walletAddress,
+        toAddress: walletAddress,
       });
-      setQuote(result);
+      const best = response.routes?.[0];
+      if (best) {
+        setQuote({ estimate: routeToPreview(best) });
+      } else {
+        setQuote(null);
+      }
       setQuoteStatus("idle");
     } catch {
       // Preview failed — not fatal, depositFlow handles execution.
