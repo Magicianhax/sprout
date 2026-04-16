@@ -103,6 +103,58 @@ const cache = new Map<string, Position[]>();
 const inflight = new Map<string, Promise<Position[]>>();
 const subscribers = new Map<string, Set<(positions: Position[]) => void>>();
 
+// Tombstones for recently-withdrawn positions. LI.FI's /positions
+// endpoint has 5-60s indexer lag after an on-chain redeem, and
+// Alchemy's /api/vault-shares can also lag a block or two — both
+// would resurrect a position we optimistically removed. A tombstone
+// blocks reconstruction for up to TOMBSTONE_TTL_MS after the
+// optimistic removal, by which point both indexers should reflect
+// the zeroed balance.
+//
+// Keyed by `${walletLower}:${chainId}:${target}` where `target` is
+// either the vaultAddress (when we have it) or an asset-address
+// fallback for legacy callers.
+const tombstones = new Map<string, number>();
+const TOMBSTONE_TTL_MS = 120_000;
+
+function tombstoneKey(
+  address: string,
+  chainId: number,
+  target: string
+): string {
+  return `${address.toLowerCase()}:${chainId}:${target.toLowerCase()}`;
+}
+
+function isTombstoned(
+  address: string,
+  chainId: number,
+  target: string | undefined
+): boolean {
+  if (!target) return false;
+  const key = tombstoneKey(address, chainId, target);
+  const ts = tombstones.get(key);
+  if (!ts) return false;
+  if (Date.now() - ts > TOMBSTONE_TTL_MS) {
+    tombstones.delete(key);
+    return false;
+  }
+  return true;
+}
+
+function clearTombstonesForVault(
+  address: string,
+  chainId: number,
+  vaultAddress: string | undefined,
+  assetAddress: string | undefined
+): void {
+  if (vaultAddress) {
+    tombstones.delete(tombstoneKey(address, chainId, vaultAddress));
+  }
+  if (assetAddress) {
+    tombstones.delete(tombstoneKey(address, chainId, assetAddress));
+  }
+}
+
 function notify(address: string) {
   const list = cache.get(address) ?? [];
   const subs = subscribers.get(address);
@@ -314,6 +366,21 @@ async function augmentWithOnChainHoldings(
   return result;
 }
 
+function applyTombstones(
+  address: string,
+  positions: Position[]
+): Position[] {
+  return positions.filter((p) => {
+    // Block on either vaultAddress (precise) or asset.address
+    // (fallback when LI.FI position hasn't been decorated with a
+    // vault match yet). Full-withdraw optimistic removal writes
+    // both keys, so either hit suppresses the resurrected entry.
+    if (isTombstoned(address, p.chainId, p.vaultAddress)) return false;
+    if (isTombstoned(address, p.chainId, p.asset.address)) return false;
+    return true;
+  });
+}
+
 async function loadPositionsFromLifi(
   address: string
 ): Promise<Position[]> {
@@ -333,7 +400,8 @@ async function loadPositionsFromLifi(
     return Number.isFinite(usd) && usd >= DUST_THRESHOLD_USD;
   });
   const decorated = decorateWithVaultAddresses(meaningful);
-  return augmentWithOnChainHoldings(address, decorated);
+  const augmented = await augmentWithOnChainHoldings(address, decorated);
+  return applyTombstones(address, augmented);
 }
 
 // When a load is already running and someone asks for a fresh
@@ -370,28 +438,121 @@ async function loadPositions(address: string): Promise<Position[]> {
   return promise;
 }
 
+/**
+ * Optimistically add a position to the cache after a successful
+ * deposit. LI.FI's /positions endpoint takes 5-60s to index a new
+ * deposit, and our on-chain augmentation can only find the vault
+ * if it's in the cached vault list — small vaults loaded via URL
+ * may never have streamed in, so we seed it here too.
+ *
+ * Clears any tombstone for this (wallet, chain, vault) so a user
+ * who withdraws and re-deposits into the same vault within the
+ * tombstone window sees their new position immediately.
+ */
+export function optimisticallyAddPosition(
+  address: string,
+  params: {
+    vault: Vault;
+    underlyingAmount: number;
+    shareBalanceRaw?: string;
+    priceUsd?: number;
+  }
+): void {
+  const { vault, underlyingAmount, shareBalanceRaw, priceUsd } = params;
+  const underlying = vault.underlyingTokens[0];
+  if (!underlying) return;
+
+  const usd = underlyingAmount * (priceUsd ?? priceFor(underlying.symbol));
+  if (!(usd >= DUST_THRESHOLD_USD)) return;
+
+  // Clear any tombstone so a re-deposit into a recently-withdrawn
+  // vault doesn't get filtered back out on the next resync.
+  clearTombstonesForVault(
+    address,
+    vault.chainId,
+    vault.address,
+    underlying.address
+  );
+
+  const optimistic: Position = {
+    chainId: vault.chainId,
+    protocolName: vault.protocol.name,
+    asset: {
+      address: underlying.address,
+      name: underlying.symbol,
+      symbol: underlying.symbol,
+      decimals: underlying.decimals,
+    },
+    balanceUsd: usd.toFixed(6),
+    balanceNative: underlyingAmount.toString(),
+    vaultAddress: vault.address,
+    shareBalanceRaw,
+  };
+
+  const current = cache.get(address) ?? [];
+  const vaultKey = vault.address.toLowerCase();
+  // Upsert — if we already show a position for this vault, prefer
+  // the larger balance (covers the "deposit more into existing
+  // position" flow — the UI shouldn't downgrade the number).
+  const existingIdx = current.findIndex(
+    (p) =>
+      p.chainId === vault.chainId &&
+      p.vaultAddress?.toLowerCase() === vaultKey
+  );
+  const next = [...current];
+  if (existingIdx >= 0) {
+    const existing = current[existingIdx];
+    const existingUsd = parseFloat(existing.balanceUsd || "0");
+    if (existingUsd >= usd) {
+      // Our optimistic value is smaller than what we already show —
+      // leave the existing entry alone, but refresh its
+      // shareBalanceRaw if we have a newer reading.
+      if (shareBalanceRaw) {
+        next[existingIdx] = { ...existing, shareBalanceRaw };
+      }
+    } else {
+      next[existingIdx] = optimistic;
+    }
+  } else {
+    next.unshift(optimistic);
+  }
+  cache.set(address, next);
+  notify(address);
+}
+
 // Optimistically remove a position from the cache (used by the
 // withdraw flow on success — the on-chain event takes a few
 // seconds for any indexer to pick up, and we don't want the UI
-// to lie in the meantime).
+// to lie in the meantime). Also writes a tombstone so the next
+// few rounds of invalidatePositions don't resurrect this entry
+// while LI.FI and Alchemy catch up.
 export function optimisticallyRemovePosition(
   address: string,
   chainId: number,
   assetAddress: string,
-  protocolName: string
+  protocolName: string,
+  vaultAddress?: string
 ) {
   const current = cache.get(address);
-  if (!current) return;
-  const next = current.filter(
-    (p) =>
-      !(
-        p.chainId === chainId &&
-        p.asset.address.toLowerCase() === assetAddress.toLowerCase() &&
-        p.protocolName.toLowerCase() === protocolName.toLowerCase()
-      )
-  );
-  cache.set(address, next);
-  notify(address);
+  if (current) {
+    const next = current.filter(
+      (p) =>
+        !(
+          p.chainId === chainId &&
+          p.asset.address.toLowerCase() === assetAddress.toLowerCase() &&
+          p.protocolName.toLowerCase() === protocolName.toLowerCase()
+        )
+    );
+    cache.set(address, next);
+    notify(address);
+  }
+  // Record the tombstone even when there's no cache yet — a load
+  // that completes after this call still needs to respect it.
+  const now = Date.now();
+  if (vaultAddress) {
+    tombstones.set(tombstoneKey(address, chainId, vaultAddress), now);
+  }
+  tombstones.set(tombstoneKey(address, chainId, assetAddress), now);
 }
 
 // Force a fresh fetch. If a load is already running, we flag it

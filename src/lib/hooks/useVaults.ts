@@ -64,6 +64,43 @@ export function getCachedVaults(): Vault[] {
 }
 
 /**
+ * Forcibly add a set of vaults to the cache under a dedicated
+ * "seeded" stream key. Used by the deposit flow so a vault the
+ * user just deposited into is guaranteed to be probed by the
+ * positions builder's augmentWithOnChainHoldings path even if it
+ * sat on page 8 of the TVL-sorted stream and never paged in.
+ *
+ * Seeded vaults persist for the whole session — we never evict
+ * them. Invalidating the catalog streams (invalidateAllVaults)
+ * clears the network-backed streams but leaves seeded vaults
+ * alone, so a post-deposit refresh doesn't drop the user's fresh
+ * position.
+ */
+const SEEDED_KEY = "__seeded__";
+export function seedVaultsIntoCache(vaults: Vault[]): void {
+  if (vaults.length === 0) return;
+  const existing = streams.get(SEEDED_KEY)?.vaults ?? [];
+  const byKey = new Map<string, Vault>();
+  for (const v of existing) {
+    byKey.set(`${v.chainId}-${v.address.toLowerCase()}`, v);
+  }
+  let changed = false;
+  for (const v of vaults) {
+    const key = `${v.chainId}-${v.address.toLowerCase()}`;
+    if (!byKey.has(key)) {
+      byKey.set(key, v);
+      changed = true;
+    }
+  }
+  if (!changed) return;
+  setState(SEEDED_KEY, {
+    vaults: Array.from(byKey.values()),
+    done: true,
+    error: null,
+  });
+}
+
+/**
  * Clear every vault stream and any inflight fetch, then re-kick a
  * fresh stream for every key that had active subscribers. Used by
  * the app-wide refresh flow so the vault grid immediately reloads
@@ -73,12 +110,21 @@ export function invalidateAllVaults(): void {
   const activeKeys = Array.from(subscribers.keys()).filter(
     (k) => (subscribers.get(k)?.size ?? 0) > 0
   );
+  // Preserve seeded vaults across a full invalidation — those came
+  // from the user's own deposits and must stick around so the
+  // positions builder keeps probing their share balances.
+  const preservedSeeded = streams.get(SEEDED_KEY);
   streams.clear();
   inflight.clear();
-  for (const subs of subscribers.values()) {
+  if (preservedSeeded) {
+    streams.set(SEEDED_KEY, preservedSeeded);
+  }
+  for (const [key, subs] of subscribers.entries()) {
+    if (key === SEEDED_KEY) continue;
     for (const cb of subs) cb(EMPTY_STATE);
   }
   for (const key of activeKeys) {
+    if (key === SEEDED_KEY) continue;
     // "__all__" was stored as undefined token; restore it.
     const token = key === "__all__" ? undefined : key;
     startStream(token);

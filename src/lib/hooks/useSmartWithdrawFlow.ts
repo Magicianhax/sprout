@@ -10,6 +10,7 @@ import {
 import { invalidateActivity } from "@/lib/hooks/useActivity";
 import { invalidateBalances } from "@/lib/hooks/useBalances";
 import { executeVaultWithdraw } from "@/lib/withdrawExecutor";
+import { friendlyErrorMessage } from "@/lib/lifi/routeAdapter";
 import { POSITION_RESYNC_DELAYS_MS, TOKEN_ADDRESSES } from "@/lib/constants";
 import {
   buildWithdrawPlan,
@@ -190,7 +191,8 @@ export function useSmartWithdrawFlow() {
               wallet.address,
               step.position.chainId,
               step.position.asset.address,
-              step.position.protocolName
+              step.position.protocolName,
+              step.position.vaultAddress
             );
           }
 
@@ -207,8 +209,12 @@ export function useSmartWithdrawFlow() {
 
         safeSetState((s) => ({ ...s, phase: "success" }));
       } catch (err) {
-        const message =
-          err instanceof Error ? err.message : "Withdrawal failed";
+        console.error("[smart-withdraw] flow failed", err);
+        const isUserReject =
+          err instanceof Error && err.name === "UserRejectedError";
+        const message = isUserReject
+          ? err.message
+          : friendlyErrorMessage(err);
         safeSetState((s) => ({ ...s, phase: "error", errorMessage: message }));
       } finally {
         inFlightRef.current = false;
