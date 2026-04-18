@@ -40,6 +40,17 @@ export async function GET(
   request: NextRequest,
   { params }: { params: Promise<{ path: string[] }> }
 ) {
+  // Earn API requires the LI.FI key on every request as of Apr 2026.
+  // We fail fast in the proxy so misconfigured deployments surface
+  // here instead of returning a confusing upstream 401 to the client.
+  if (!LIFI_API_KEY) {
+    console.error("[earn proxy] LIFI_API_KEY not configured");
+    return NextResponse.json(
+      { message: "Server configuration error" },
+      { status: 500, headers: NO_STORE_HEADERS }
+    );
+  }
+
   const { path } = await params;
   const apiPath = path.map((seg) => encodeURIComponent(seg)).join("/");
 
@@ -52,10 +63,9 @@ export async function GET(
     safeQuery.toString() ? `?${safeQuery.toString()}` : ""
   }`;
 
-  const headers: Record<string, string> = {};
-  if (LIFI_API_KEY) {
-    headers["x-lifi-api-key"] = LIFI_API_KEY;
-  }
+  const headers: Record<string, string> = {
+    "x-lifi-api-key": LIFI_API_KEY,
+  };
 
   try {
     const res = await fetch(url, {

@@ -135,12 +135,14 @@ export const RPC_FETCH_TIMEOUT_MS = 10000;
 export const MAX_SLIPPAGE = 0.03; // 3% hard cap
 export const DEFAULT_SLIPPAGE = 0.01; // 1% when client omits it
 
-// Allowlists for the earn API proxy (see /api/earn/[...path]/route.ts)
+// Allowlists for the earn API proxy (see /api/earn/[...path]/route.ts).
+// Path layout changed Apr 2026 — LI.FI dropped the /earn/ subpath
+// segment, so endpoints now live at /v1/vaults, /v1/chains, etc.
 export const EARN_API_PATH_ALLOWLIST: readonly RegExp[] = [
-  /^v1\/earn\/vaults$/,
-  /^v1\/earn\/chains$/,
-  /^v1\/earn\/protocols$/,
-  /^v1\/earn\/portfolio\/0x[0-9a-fA-F]{40}\/positions$/,
+  /^v1\/vaults$/,
+  /^v1\/chains$/,
+  /^v1\/protocols$/,
+  /^v1\/portfolio\/0x[0-9a-fA-F]{40}\/positions$/,
 ] as const;
 
 export const EARN_API_QUERY_ALLOWLIST = new Set([

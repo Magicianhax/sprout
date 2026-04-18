@@ -46,7 +46,7 @@ async function fetchVaultsRaw(params?: {
   if (params?.cursor) searchParams.set("cursor", params.cursor);
 
   const json = await getJson(
-    `${API_BASE}/v1/earn/vaults?${searchParams}`,
+    `${API_BASE}/v1/vaults?${searchParams}`,
     "vaults"
   );
   if (!isVaultsResponse(json)) {
@@ -211,13 +211,13 @@ export async function fetchAllVaults(params?: {
 }
 
 export async function fetchChains(): Promise<Chain[]> {
-  const json = await getJson(`${API_BASE}/v1/earn/chains`, "chains");
+  const json = await getJson(`${API_BASE}/v1/chains`, "chains");
   if (!Array.isArray(json)) throw new ApiShapeError("chains");
   return json as Chain[];
 }
 
 export async function fetchProtocols(): Promise<{ name: string; url?: string }[]> {
-  const json = await getJson(`${API_BASE}/v1/earn/protocols`, "protocols");
+  const json = await getJson(`${API_BASE}/v1/protocols`, "protocols");
   if (!Array.isArray(json)) throw new ApiShapeError("protocols");
   return json as { name: string; url?: string }[];
 }
@@ -227,7 +227,7 @@ export async function fetchPositions(address: string): Promise<PositionsResponse
     throw new Error("Invalid wallet address");
   }
   const json = await getJson(
-    `${API_BASE}/v1/earn/portfolio/${address}/positions`,
+    `${API_BASE}/v1/portfolio/${address}/positions`,
     "positions"
   );
   if (!isPositionsResponse(json)) {
